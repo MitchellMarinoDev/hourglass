@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "hourglass_engine",
+    "hourglass_visual",
+    "hourglass_engine_runner",
+]
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+

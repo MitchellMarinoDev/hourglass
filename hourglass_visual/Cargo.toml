@@ -1,0 +1,9 @@
+[package]
+name = "hourglass_visual"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.10"
+bitflags = "2.2.1"
+hourglass_engine = { path = "../hourglass_engine" }
