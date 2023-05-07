@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.10"
+bevy_editor_pls = "0.4.0"
 bevy_mod_picking = { version = "0.13.0", default_features = false, features = [
     "backend_raycast",
     "backend_bevy_ui",

@@ -1,30 +1,62 @@
-use bitflags::bitflags;
+mod fen;
+mod pieces;
 
-bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct Piece: u8 {
-        const None = 0;
-        const King = 1;
-        const Pawn = 2;
-        const Knight = 3;
-        const Bishop = 4;
-        const Rook = 5;
-        const Queen = 6;
+use derive_more::*;
+use lazy_static::lazy_static;
 
-        const White = 8;
-        const Black = 16;
+pub use pieces::*;
 
-        const PieceType = 0b111;
-        const PlayerType = 0b11000;
+lazy_static! {
+    static ref NUM_SQUARES_TO_EDGE: [[usize; 8]; 64] = {
+        let mut squares_to_edge = [[0; 8]; 64];
+
+        for file in 0..8 {
+            for rank in 0..8 {
+                let n_north = 7 - rank;
+                let n_south = rank;
+                let n_west = file;
+                let n_east = 7 - file;
+
+                let idx = rank * 8 + file;
+
+                squares_to_edge[idx] = [
+                    n_north,
+                    n_south,
+                    n_west,
+                    n_east,
+                    usize::min(n_north, n_west),
+                    usize::min(n_south, n_east),
+                    usize::min(n_north, n_east),
+                    usize::min(n_south, n_west),
+                ];
+            }
+        }
+
+        squares_to_edge
+    };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deref)]
+pub struct BoardIdx(usize);
+
+impl BoardIdx {
+    /// Creates a new [`BoardIdx`] if it is in range (0..64).
+    pub fn new(idx: usize) -> Option<Self> {
+        if !(0..64).contains(&idx) {
+            None
+        } else {
+            Some(BoardIdx(idx))
+        }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct CastleRights: u8 {
-        const None = 0;
-        const WhiteKingSide = 1<<0;
-        const WhiteQueenSide = 1<<1;
-        const BlackKingSide = 1<<2;
-        const BlackQueenSide = 1<<3;
+    /// Unwrapped new.
+    ///
+    /// Creates a new [`BoardIdx`], panicing if it is out of range (0..64).
+    pub fn unew(idx: usize) -> Self {
+        if !(0..64).contains(&idx) {
+            panic!("unew called with a value ({idx}) outside of the range 0..64");
+        }
+        BoardIdx(idx)
     }
 }
 
@@ -37,44 +69,46 @@ pub enum InvalidMoveErr {
     IllegalMove,
 }
 
-/// An Unchecked Move.
+/// An unchecked move.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct UMove {
-    from: usize,
-    to: usize,
+    from: BoardIdx,
+    to: BoardIdx,
 }
 
 impl UMove {
-    pub fn from_idxs(from: usize, to: usize) -> Self {
+    /// From unwrapped indicies.
+    pub fn from_uidxs(from: usize, to: usize) -> Self {
+        UMove {
+            from: BoardIdx::unew(from),
+            to: BoardIdx::unew(to),
+        }
+    }
+
+    /// From board indicies.
+    pub fn from_idxs(from: BoardIdx, to: BoardIdx) -> Self {
         UMove { from, to }
     }
 
+    /// From a string move.
     pub fn new(str: &str) -> Option<Self> {
         if str.len() != 4 {
             return None;
         }
 
         let (from, to) = str.split_at(2);
-        let from = idx_from_move(from)?;
-        let to = idx_from_move(to)?;
+        let from = idx_from_pos(from)?;
+        let to = idx_from_pos(to)?;
 
         Some(UMove { from, to })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Player {
-    White,
-    Black,
-}
-
-impl Player {
-    pub fn to_piece_color(&self) -> Piece {
-        match *self {
-            Player::White => Piece::White,
-            Player::Black => Piece::Black,
-        }
-    }
+/// A checked move.
+pub struct Move<'b> {
+    _board: &'b Board,
+    from: BoardIdx,
+    to: BoardIdx,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -82,46 +116,9 @@ pub struct Board {
     squares: [Piece; 64],
     castle_rights: CastleRights,
     active_color: Player,
-    en_passant: Option<usize>,
+    en_passant: Option<BoardIdx>,
     halfmove: u32,
     fullmove: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FenPart {
-    Board,
-    ActiveColor,
-    CastleRights,
-    EnPassant,
-    HalfMove,
-    FullMove,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FenParseErr {
-    MissingComponent {
-        part: FenPart,
-    },
-    InvalidData {
-        part: FenPart,
-        char_idx: usize,
-        err_msg: &'static str,
-    },
-    TooManyComponents,
-}
-
-impl FenParseErr {
-    pub fn missing(part: FenPart) -> Self {
-        FenParseErr::MissingComponent { part }
-    }
-
-    pub fn invalid(part: FenPart, char_idx: usize, err_msg: &'static str) -> Self {
-        FenParseErr::InvalidData {
-            part,
-            char_idx,
-            err_msg,
-        }
-    }
 }
 
 impl Board {
@@ -135,8 +132,8 @@ impl Board {
 
     pub fn empty() -> Self {
         Board {
-            squares: [Piece::None; 64],
-            castle_rights: CastleRights::None,
+            squares: [Piece::empty(); 64],
+            castle_rights: CastleRights::empty(),
             active_color: Player::White,
             en_passant: None,
             halfmove: 0,
@@ -144,178 +141,40 @@ impl Board {
         }
     }
 
-    fn piece_from_fen(c: char) -> Option<Piece> {
-        let piece_type = match c.to_lowercase().next().unwrap() {
-            'k' => Piece::King,
-            'p' => Piece::Pawn,
-            'n' => Piece::Knight,
-            'b' => Piece::Bishop,
-            'r' => Piece::Rook,
-            'q' => Piece::Queen,
-            _ => return None,
-        };
-
-        let player_type = if c.is_uppercase() {
-            Piece::White
-        } else {
-            Piece::Black
-        };
-
-        Some(player_type | piece_type)
-    }
-
-    pub fn load_fen(&mut self, fen: &str) -> Result<(), FenParseErr> {
-        use FenPart::*;
-
-        let mut split = fen.split(' ');
-        let board = split.next().ok_or(FenParseErr::missing(Board))?;
-        let active_color = split.next().ok_or(FenParseErr::missing(ActiveColor))?;
-        let castling = split.next().ok_or(FenParseErr::missing(CastleRights))?;
-        let en_passant = split.next().ok_or(FenParseErr::missing(EnPassant))?;
-        let halfmove = split.next().ok_or(FenParseErr::missing(HalfMove))?;
-        let fullmove = split.next().ok_or(FenParseErr::missing(FullMove))?;
-        if split.next().is_some() {
-            return Err(FenParseErr::TooManyComponents);
-        }
-
-        self.parse_board(board)?;
-        self.parse_active_color(active_color)?;
-        self.fun_name(castling)?;
-        self.parse_en_passant(en_passant)?;
-        self.parse_halfmove(halfmove)?;
-        self.parse_fullmove(fullmove)?;
-
-        Ok(())
-    }
-
     pub fn try_move(&mut self, umove: UMove) -> Result<(), InvalidMoveErr> {
         // check if the player owns the piece they are trying to move
-        if !matches!(self.squares.get(umove.from), Some(piece) if *piece | self.active_color.to_piece_color() != Piece::None)
-        {
+        println!("From: {:?}", self.squares[*umove.from]);
+        println!("ActiveColor: {:?}", self.active_color);
+        println!(
+            "AND: {:?}",
+            self.squares[*umove.from] & self.active_color.to_piece_color()
+        );
+        if self.squares[*umove.from] & self.active_color.to_piece_color() == Piece::empty() {
             return Err(InvalidMoveErr::NotYourPiece);
         }
 
-        // TODO: check if it is a vlid move
+        // TODO: check if it is a valid move
 
-        self.squares[umove.to] = self.squares[umove.from];
-        self.squares[umove.from] = Piece::None;
+        self.squares[*umove.to] = self.squares[*umove.from];
+        self.squares[*umove.from] = Piece::empty();
 
         Ok(())
     }
 
-    pub fn piece_at(&self, idx: usize) -> Option<Piece> {
-        self.squares.get(idx).copied()
+    pub fn active_color(&self) -> Player {
+        self.active_color
     }
 
-    fn parse_active_color(&mut self, active_color: &str) -> Result<(), FenParseErr> {
-        self.active_color = match active_color {
-            "w" => Player::White,
-            "b" => Player::Black,
-            _ => {
-                return Err(FenParseErr::invalid(
-                    FenPart::ActiveColor,
-                    0,
-                    "the active color must be 'w' or 'b'",
-                ));
-            }
-        };
-        Ok(())
-    }
-
-    fn parse_board(&mut self, board: &str) -> Result<(), FenParseErr> {
-        let mut file: usize = 0;
-        let mut rank: usize = 7;
-        Ok(for (char_idx, c) in board.chars().enumerate() {
-            if c == '/' {
-                file = 0;
-                rank -= 1;
-                continue;
-            }
-            if let Some(num) = c.to_digit(10) {
-                file += num as usize;
-            } else {
-                let piece = Self::piece_from_fen(c).ok_or(FenParseErr::invalid(
-                    FenPart::Board,
-                    char_idx,
-                    "invalid char",
-                ))?;
-                let square = self
-                    .squares
-                    .get_mut(rank * 8 + file)
-                    .ok_or(FenParseErr::invalid(
-                        FenPart::Board,
-                        char_idx,
-                        "overran board",
-                    ))?;
-                *square = piece;
-                file += 1;
-            }
-        })
-    }
-
-    fn fun_name(&mut self, castling: &str) -> Result<(), FenParseErr> {
-        for (c_idx, c) in castling.chars().enumerate() {
-            match c {
-                'K' => self.castle_rights |= crate::CastleRights::WhiteKingSide,
-                'Q' => self.castle_rights |= crate::CastleRights::WhiteQueenSide,
-                'k' => self.castle_rights |= crate::CastleRights::BlackKingSide,
-                'q' => self.castle_rights |= crate::CastleRights::BlackQueenSide,
-                _ => {
-                    return Err(FenParseErr::invalid(
-                        FenPart::CastleRights,
-                        c_idx,
-                        "character must be either 'K', 'Q', 'k', or 'q'",
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn parse_en_passant(&mut self, en_passant: &str) -> Result<(), FenParseErr> {
-        if en_passant == "-" {
-            self.en_passant = None;
-            return Ok(());
-        }
-
-        let idx = idx_from_move(en_passant).ok_or(FenParseErr::invalid(
-            FenPart::EnPassant,
-            0,
-            "the en passant section must be a board position or a '-'",
-        ))?;
-
-        self.en_passant = Some(idx);
-        Ok(())
-    }
-
-    fn parse_halfmove(&mut self, halfmove: &str) -> Result<(), FenParseErr> {
-        self.halfmove = halfmove.parse().map_err(|_| {
-            FenParseErr::invalid(
-                FenPart::HalfMove,
-                0,
-                "halfmove part of the fen should be an unsigned int",
-            )
-        })?;
-        Ok(())
-    }
-
-    fn parse_fullmove(&mut self, fullmove: &str) -> Result<(), FenParseErr> {
-        self.fullmove = fullmove.parse().map_err(|_| {
-            FenParseErr::invalid(
-                FenPart::FullMove,
-                0,
-                "fullmove part of the fen should be an unsigned int",
-            )
-        })?;
-        Ok(())
+    pub fn piece_at(&self, idx: BoardIdx) -> Piece {
+        self.squares[*idx]
     }
 }
 
-fn idx_from_move(move_str: &str) -> Option<usize> {
-    let mut move_chars = move_str.chars();
+fn idx_from_pos(pos: &str) -> Option<BoardIdx> {
+    let mut pos_chars = pos.chars();
     let mut idx = 0;
 
-    match move_chars.next() {
+    match pos_chars.next() {
         Some('a') => idx += 0 * 8,
         Some('b') => idx += 1 * 8,
         Some('c') => idx += 2 * 8,
@@ -327,10 +186,22 @@ fn idx_from_move(move_str: &str) -> Option<usize> {
         _ => return None,
     }
 
-    match move_chars.next().map(|c| c.to_digit(10)) {
+    match pos_chars.next().map(|c| c.to_digit(10)) {
         Some(Some(v)) if (0..8).contains(&v) => idx += v as usize,
         _ => return None,
     }
 
-    Some(idx)
+    Some(BoardIdx::unew(idx))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Board, UMove};
+
+    #[test]
+    fn test_try_move() {
+        let mut board = Board::new();
+        // e2 to e4 should be a valid starting move.
+        board.try_move(UMove::new("e2e4").unwrap()).unwrap();
+    }
 }
