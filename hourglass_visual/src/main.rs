@@ -2,12 +2,13 @@ mod piece;
 mod setup;
 
 use bevy::prelude::*;
+use bevy_mod_picking::low_latency_window_plugin;
 use piece::PieceExt;
-use setup::{Board, BoardPiece, SetupPlugin};
+use setup::{Board, BoardPiece, PickedPiece, SetupPlugin};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins)
+    app.add_plugins(DefaultPlugins.set(low_latency_window_plugin()))
         .add_plugins(bevy_mod_picking::DefaultPickingPlugins)
         .add_plugin(SetupPlugin)
         .add_system(update_pieces)
