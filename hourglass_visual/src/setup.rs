@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use hourglass_engine::Piece;
+use hourglass_engine::UMove;
 
 use crate::piece::PieceExt;
 
@@ -13,6 +14,7 @@ impl Plugin for SetupPlugin {
         app.add_startup_system(setup);
     }
 }
+
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Deref, DerefMut)]
 pub(crate) struct Board(hourglass_engine::Board);
 
@@ -208,16 +210,24 @@ fn move_piece(
     Bubble::Burst
 }
 
-fn drop_piece_on(In(event): In<ListenedEvent<Drop>>, mut board: ResMut<Board>, q_piece: Query<&BoardPiece>) -> Bubble {
-    let dropped_piece = match q_piece.get(event.dropped) {
+fn drop_piece_on(
+    In(event): In<ListenedEvent<Drop>>,
+    mut board: ResMut<Board>,
+    q_board_square: Query<&BoardSquare>,
+) -> Bubble {
+    let from_square = match q_board_square.get(event.dropped) {
         Ok(dp) => dp,
         Err(_) => {
-            info!("the object dropped on this was not a piece"),
+            info!("the object dropped on this was not a board square");
             return Bubble::Up;
         }
     };
-    let this = q_piece.get(event.target).expect("this should be called on a piece");
+    let this = q_board_square
+        .get(event.target)
+        .expect("this should be called on a piece");
 
-    board.try_move(UMove::from_idxs(dropped_piece.idx, this.idx));
+    board
+        .try_move(UMove::from_idxs(from_square.idx, this.idx))
+        .unwrap();
     Bubble::Burst
 }

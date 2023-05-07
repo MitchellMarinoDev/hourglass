@@ -4,7 +4,7 @@ mod setup;
 use bevy::prelude::*;
 use bevy_mod_picking::low_latency_window_plugin;
 use piece::PieceExt;
-use setup::{Board, BoardPiece, PickedPiece, SetupPlugin};
+use setup::{Board, BoardPiece, SetupPlugin};
 
 fn main() {
     let mut app = App::new();
@@ -21,6 +21,6 @@ fn update_pieces(board: Res<Board>, mut q_piece: Query<(&BoardPiece, &mut Textur
     }
 
     for (piece, mut texture) in q_piece.iter_mut() {
-        texture.index = board.squares[piece.idx].get_texture_idx();
+        texture.index = board.piece_at(piece.idx).unwrap().get_texture_idx();
     }
 }
