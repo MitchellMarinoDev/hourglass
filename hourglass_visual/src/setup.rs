@@ -269,8 +269,7 @@ fn drop_piece_on(
         .get(event.target)
         .expect("this should be called on a piece");
 
-    board
-        .try_move(UMove::from_idxs(from_square.idx, this.idx))
-        .unwrap();
+    let _ = board.try_move(UMove::from_idxs(from_square.idx, this.idx));
+
     Bubble::Burst
 }
