@@ -227,13 +227,6 @@ fn drop_piece_on(
         .get(event.target)
         .expect("this should be called on a piece");
 
-    println!("It is {:?} turn.", board.active_color());
-    println!("Moving: {} to {}", from_square.idx, this.idx);
-    println!(
-        "{:?} to {:?}",
-        board.piece_at(BoardIdx::unew(from_square.idx)),
-        board.piece_at(BoardIdx::unew(this.idx))
-    );
     board
         .try_move(UMove::from_idxs(
             BoardIdx::unew(from_square.idx),
