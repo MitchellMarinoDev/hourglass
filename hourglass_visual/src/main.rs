@@ -30,11 +30,16 @@ fn show_moves(
         let mut moves = Vec::new();
         board.get_moves_for(&mut moves, picked_piece.idx);
 
-        println!("MOVES: {:?}", moves);
+        println!("Calculating...");
 
         for (mut image, hint) in q_move_hits.iter_mut() {
             if moves.iter().any(|m| m.to() == hint.idx) {
-                *image = move_hint_assets.open.clone();
+                let new_image = if board.piece_at(hint.idx).is_color(!board.active_color()) {
+                    move_hint_assets.take.clone()
+                } else {
+                    move_hint_assets.open.clone()
+                };
+                *image = new_image;
             }
         }
     }
