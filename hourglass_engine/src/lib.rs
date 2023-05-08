@@ -36,6 +36,10 @@ lazy_static! {
     };
 }
 
+pub(crate) fn squares_to_edge(start: BoardIdx, dir: Direction) -> usize {
+    NUM_SQUARES_TO_EDGE[*start][dir as usize]
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deref)]
 pub struct BoardIdx(usize);
 
@@ -105,10 +109,73 @@ impl UMove {
 }
 
 /// A checked move.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Move<'b> {
     _board: &'b Board,
     from: BoardIdx,
     to: BoardIdx,
+}
+
+impl<'b> Move<'b> {
+    pub fn to(&self) -> BoardIdx {
+        self.to
+    }
+
+    pub fn from(&self) -> BoardIdx {
+        self.from
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Direction {
+    North = 0,
+    South = 1,
+    West = 2,
+    East = 3,
+    NorthWest = 4,
+    SouthEast = 5,
+    NorthEast = 6,
+    SouthWest = 7,
+}
+
+impl Direction {
+    const ALL: [Direction; 8] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+        Direction::NorthWest,
+        Direction::SouthEast,
+        Direction::NorthEast,
+        Direction::SouthWest,
+    ];
+
+    const ROOK: [Direction; 4] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    const BISHOP: [Direction; 4] = [
+        Direction::NorthWest,
+        Direction::SouthEast,
+        Direction::NorthEast,
+        Direction::SouthWest,
+    ];
+
+    pub(crate) fn offset(&self) -> isize {
+        match *self {
+            Direction::North => 8,
+            Direction::South => -8,
+            Direction::West => -1,
+            Direction::East => 1,
+            Direction::NorthWest => 7,
+            Direction::SouthEast => -7,
+            Direction::NorthEast => 9,
+            Direction::SouthWest => -9,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -143,12 +210,6 @@ impl Board {
 
     pub fn try_move(&mut self, umove: UMove) -> Result<(), InvalidMoveErr> {
         // check if the player owns the piece they are trying to move
-        println!("From: {:?}", self.squares[*umove.from]);
-        println!("ActiveColor: {:?}", self.active_color);
-        println!(
-            "AND: {:?}",
-            self.squares[*umove.from] & self.active_color.to_piece_color()
-        );
         if self.squares[*umove.from] & self.active_color.to_piece_color() == Piece::empty() {
             return Err(InvalidMoveErr::NotYourPiece);
         }
@@ -159,6 +220,62 @@ impl Board {
         self.squares[*umove.from] = Piece::empty();
 
         Ok(())
+    }
+
+    pub fn generate_moves(&self) -> Vec<Move> {
+        let mut moves = Vec::new();
+
+        for (idx, piece) in self.squares.iter().enumerate() {
+            if piece.is_color(self.active_color) {
+                self.get_moves_for(&mut moves, BoardIdx::unew(idx))
+            }
+        }
+
+        moves
+    }
+
+    pub fn get_moves_for<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, idx: BoardIdx) {
+        let piece = self.piece_at(idx);
+
+        if piece.is_sliding() {
+            self.generate_sliding_moves(moves, idx, piece);
+        }
+    }
+
+    pub fn generate_sliding_moves<'b, 'v>(
+        &'b self,
+        moves: &'v mut Vec<Move<'b>>,
+        start: BoardIdx,
+        piece: Piece,
+    ) {
+        let directions = match piece & Piece::PieceType {
+            Piece::Bishop => &Direction::BISHOP[..],
+            Piece::Rook => &Direction::ROOK[..],
+            Piece::Queen => &Direction::ALL[..],
+            _ => panic!("generate_sliding_moves called on a non-sliding piece"),
+        };
+
+        for dir in directions {
+            for n in 0..squares_to_edge(start, *dir) as isize {
+                let target = (*start as isize + dir.offset() * (n + 1)) as usize;
+                let target_piece = self.squares[target];
+
+                // Block by friendly
+                if target_piece.is_color(self.active_color) {
+                    break;
+                }
+
+                moves.push(Move {
+                    _board: self,
+                    from: start,
+                    to: BoardIdx::unew(target),
+                });
+
+                if target_piece.is_color(!self.active_color) {
+                    break;
+                }
+            }
+        }
     }
 
     pub fn active_color(&self) -> Player {

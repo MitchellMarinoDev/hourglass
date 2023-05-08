@@ -43,3 +43,27 @@ impl Player {
         }
     }
 }
+
+impl std::ops::Not for Player {
+    type Output = Player;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Player::White => Player::Black,
+            Player::Black => Player::White,
+        }
+    }
+}
+
+impl Piece {
+    pub fn is_color(&self, p: Player) -> bool {
+        *self & p.to_piece_color() != Piece::empty()
+    }
+
+    pub fn is_sliding(&self) -> bool {
+        matches!(
+            *self & Piece::PieceType,
+            Piece::Queen | Piece::Rook | Piece::Bishop
+        )
+    }
+}

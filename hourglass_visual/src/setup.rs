@@ -25,24 +25,30 @@ impl Board {
     }
 }
 
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardPiece {
-    pub(crate) idx: usize,
+    pub(crate) idx: BoardIdx,
 }
 
-#[derive(Reflect, Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Resource, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MoveHintAssets {
+    pub none: Handle<Image>,
+    pub open: Handle<Image>,
+    pub take: Handle<Image>,
+}
+
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MoveHint {
+    pub(crate) idx: BoardIdx,
+}
+
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardSquare {
-    pub(crate) idx: usize,
+    pub(crate) idx: BoardIdx,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PickedPiece;
-
-impl BoardSquare {
-    pub(crate) fn new(idx: usize) -> Self {
-        BoardSquare { idx }
-    }
-}
 
 fn setup(
     mut commands: Commands,
@@ -56,6 +62,13 @@ fn setup(
     let atlas = TextureAtlas::from_grid(piece_img, Vec2::splat(333.), 6, 3, None, None);
     let atlas_handle = texture_atlases.add(atlas);
 
+    let move_hint_assets = MoveHintAssets {
+        none: asset_server.load("empty.png"),
+        open: asset_server.load("dot.png"),
+        take: asset_server.load("circle.png"),
+    };
+    commands.insert_resource(move_hint_assets.clone());
+
     let dark_color = Color::rgb(0.2, 0.6, 0.9);
     let light_color = Color::rgb(0.9, 0.95, 1.);
 
@@ -63,6 +76,33 @@ fn setup(
 
     spawn_board(&mut commands, light_color, dark_color, meshes);
     spawn_pieces(&mut commands, atlas_handle);
+    spawn_move_hints(&mut commands, move_hint_assets);
+}
+
+fn spawn_move_hints(commands: &mut Commands, move_hint_assets: MoveHintAssets) {
+    for file in 0..8 {
+        for rank in 0..8 {
+            let pos = Vec2::new(
+                -3.5 * SQUARE_SIZE + file as f32 * SQUARE_SIZE,
+                -3.5 * SQUARE_SIZE + rank as f32 * SQUARE_SIZE,
+            );
+
+            commands.spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        custom_size: Some(Vec2::new(SQUARE_SIZE, SQUARE_SIZE)),
+                        ..default()
+                    },
+                    transform: Transform::from_translation(pos.extend(0.)),
+                    texture: move_hint_assets.none.clone(),
+                    ..default()
+                },
+                MoveHint {
+                    idx: BoardIdx::unew(rank * 8 + file),
+                },
+            ));
+        }
+    }
 }
 
 fn spawn_pieces(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
@@ -86,7 +126,7 @@ fn spawn_pieces(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
                     ..default()
                 },
                 BoardPiece {
-                    idx: rank * 8 + file,
+                    idx: BoardIdx::unew(rank * 8 + file),
                 },
             ));
         }
@@ -137,7 +177,9 @@ fn spawn_square(
             transform: Transform::from_translation(pos.extend(0.)),
             ..default()
         },
-        BoardSquare::new(rank * 8 + file),
+        BoardSquare {
+            idx: BoardIdx::unew(rank * 8 + file),
+        },
         mesh,
         RaycastPickTarget::default(),
         PickableBundle::default(),
@@ -188,8 +230,8 @@ fn drag_end(
         commands.entity(entity).remove::<PickedPiece>();
         // figure out a place to put the piece and change the board to reflect
         //     that
-        let rank = piece.idx / 8;
-        let file = piece.idx % 8;
+        let rank = *piece.idx / 8;
+        let file = *piece.idx % 8;
         let pos = Vec3::new(
             -3.5 * SQUARE_SIZE + file as f32 * SQUARE_SIZE,
             -3.5 * SQUARE_SIZE + rank as f32 * SQUARE_SIZE,
@@ -228,10 +270,7 @@ fn drop_piece_on(
         .expect("this should be called on a piece");
 
     board
-        .try_move(UMove::from_idxs(
-            BoardIdx::unew(from_square.idx),
-            BoardIdx::unew(this.idx),
-        ))
+        .try_move(UMove::from_idxs(from_square.idx, this.idx))
         .unwrap();
     Bubble::Burst
 }
