@@ -1,5 +1,7 @@
 use bitflags::bitflags;
 
+use crate::Direction;
+
 bitflags! {
     /// Bitflags for represending a piece, ex. King, Rook, Pawn,
     ///     along with its color.
@@ -40,6 +42,20 @@ impl Player {
         match *self {
             Player::White => Piece::White,
             Player::Black => Piece::Black,
+        }
+    }
+
+    pub(crate) fn forward_dir(&self) -> Direction {
+        match self {
+            Player::White => Direction::North,
+            Player::Black => Direction::South,
+        }
+    }
+
+    pub(crate) fn forward_value(&self) -> isize {
+        match self {
+            Player::White => 1,
+            Player::Black => -1,
         }
     }
 }

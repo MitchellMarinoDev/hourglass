@@ -214,11 +214,36 @@ impl Board {
             return Err(InvalidMoveErr::NotYourPiece);
         }
 
-        // TODO: check if it is a valid move
+        let mut moves = vec![];
+        self.get_moves_for(&mut moves, umove.from);
+        if !moves.iter().any(|m| m.to == umove.to) {
+            // invalid move
+            return Err(InvalidMoveErr::IllegalMove);
+        }
+
+        // handle en_passant
+        if self.en_passant == Some(umove.to) {
+            // if the move to value matches the curren en passant-able square,
+            //     take the pawn that double pushed.
+            let target = (*umove.to as isize - self.active_color.forward_value() * 8) as usize;
+            self.squares[target] = Piece::empty();
+        }
+
+        // record en passant
+        if self.piece_at(umove.from) & Piece::PieceType == Piece::Pawn
+            && (((*umove.from as isize) - (*umove.to as isize)).abs() == 16)
+        {
+            // pawn moved 2 spaces; record en passant
+            let target = (*umove.to as isize - self.active_color.forward_value() * 8) as usize;
+            self.en_passant = Some(BoardIdx::unew(target));
+        } else {
+            self.en_passant = None;
+        }
 
         self.squares[*umove.to] = self.squares[*umove.from];
         self.squares[*umove.from] = Piece::empty();
 
+        self.active_color = !self.active_color;
         Ok(())
     }
 
@@ -237,12 +262,23 @@ impl Board {
     pub fn get_moves_for<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, idx: BoardIdx) {
         let piece = self.piece_at(idx);
 
+        if !piece.is_color(self.active_color) {
+            return;
+        }
+
+        let piece_type = piece & Piece::PieceType;
         if piece.is_sliding() {
             self.generate_sliding_moves(moves, idx, piece);
+        } else if piece_type == Piece::Knight {
+            self.generate_knight_moves(moves, idx);
+        } else if piece_type == Piece::Pawn {
+            self.generate_pawn_moves(moves, idx);
+        } else if piece_type == Piece::King {
+            self.generate_king_moves(moves, idx);
         }
     }
 
-    pub fn generate_sliding_moves<'b, 'v>(
+    fn generate_sliding_moves<'b, 'v>(
         &'b self,
         moves: &'v mut Vec<Move<'b>>,
         start: BoardIdx,
@@ -276,6 +312,124 @@ impl Board {
                 }
             }
         }
+    }
+
+    fn generate_knight_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+        const KNIGHT_MOVES: [(isize, isize); 8] = [
+            (-2, 1),
+            (-1, 2),
+            (1, 2),
+            (2, 1),
+            (2, -1),
+            (1, -2),
+            (-1, -2),
+            (-2, -1),
+        ];
+
+        for (dx, dy) in KNIGHT_MOVES.iter() {
+            let x_dir = if *dx > 0 {
+                Direction::East
+            } else {
+                Direction::West
+            };
+
+            let y_dir = if *dy > 0 {
+                Direction::North
+            } else {
+                Direction::South
+            };
+
+            if squares_to_edge(start, x_dir) >= dx.abs() as usize
+                && squares_to_edge(start, y_dir) >= dy.abs() as usize
+            {
+                // target square is in bounds.
+                let target = BoardIdx::unew((*start as isize + (dy * 8) + dx) as usize);
+                if !self.piece_at(target).is_color(self.active_color) {
+                    moves.push(Move {
+                        _board: self,
+                        from: start,
+                        to: target,
+                    });
+                }
+            }
+        }
+    }
+
+    fn generate_pawn_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+        if squares_to_edge(start, self.active_color.forward_dir()) < 1 {
+            return;
+        }
+        let forward_target = (*start as isize + self.active_color.forward_value() * 8) as usize;
+
+        // pawns can take diagonally
+        if squares_to_edge(start, Direction::West) >= 1 {
+            let target = BoardIdx::unew(forward_target - 1);
+            if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
+            {
+                moves.push(Move {
+                    _board: self,
+                    from: start,
+                    to: target,
+                });
+            }
+        }
+        if squares_to_edge(start, Direction::East) >= 1 {
+            let target = BoardIdx::unew(forward_target + 1);
+            if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
+            {
+                moves.push(Move {
+                    _board: self,
+                    from: start,
+                    to: target,
+                });
+            }
+        }
+
+        if self.squares[forward_target] == Piece::empty() {
+            moves.push(Move {
+                _board: self,
+                from: start,
+                to: BoardIdx::unew(forward_target),
+            });
+        } else {
+            return;
+        }
+
+        // if it is on the starting rank, it can move forward 2.
+        if (self.active_color == Player::White && *start / 8 == 1)
+            || (self.active_color == Player::Black && *start / 8 == 6)
+        {
+            let target =
+                BoardIdx::unew((*start as isize + self.active_color.forward_value() * 16) as usize);
+            if self.piece_at(target) == Piece::empty() {
+                moves.push(Move {
+                    _board: self,
+                    from: start,
+                    to: target,
+                })
+            }
+        }
+    }
+    pub fn generate_king_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+        for dir in Direction::ALL {
+            if squares_to_edge(start, dir) >= 1 {
+                let target = BoardIdx::unew((*start as isize + dir.offset()) as usize);
+                let target_piece = self.piece_at(target);
+
+                // Block by friendly
+                if target_piece.is_color(self.active_color) {
+                    continue;
+                }
+
+                moves.push(Move {
+                    _board: self,
+                    from: start,
+                    to: target,
+                });
+            }
+        }
+
+        // Castling
     }
 
     pub fn active_color(&self) -> Player {
