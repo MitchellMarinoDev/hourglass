@@ -10,9 +10,9 @@ bevy_mod_picking = { version = "0.13.0", default_features = false, features = [
     "backend_raycast",
     "backend_bevy_ui",
     # "backend_sprite",
-    "debug",
+    # "debug",
     "selection",
-    "highlight",
+    # "highlight",
 ]}
 bitflags = "2.2.1"
 hourglass_engine = { path = "../hourglass_engine" }

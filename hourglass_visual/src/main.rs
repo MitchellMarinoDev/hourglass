@@ -30,7 +30,7 @@ fn show_moves(
         let mut moves = Vec::new();
         board.get_moves_for(&mut moves, picked_piece.idx);
 
-        println!("Calculating...");
+        println!("{:?}", board);
 
         for (mut image, hint) in q_move_hits.iter_mut() {
             if moves.iter().any(|m| m.to() == hint.idx) {

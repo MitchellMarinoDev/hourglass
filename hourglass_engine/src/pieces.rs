@@ -31,6 +31,27 @@ bitflags! {
     }
 }
 
+impl CastleRights {
+    pub fn has_right(&self, rhs: CastleRights) -> bool {
+        *self & rhs != CastleRights::empty()
+    }
+
+    pub fn revoke(&mut self, rhs: CastleRights) {
+        *self &= !rhs;
+    }
+
+    pub fn revoke_all(&mut self, player: Player) {
+        match player {
+            Player::White => {
+                self.revoke(CastleRights::WhiteKingSide | CastleRights::WhiteQueenSide)
+            }
+            Player::Black => {
+                self.revoke(CastleRights::BlackKingSide | CastleRights::BlackQueenSide)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Player {
     White,

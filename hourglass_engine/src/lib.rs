@@ -6,6 +6,15 @@ use lazy_static::lazy_static;
 
 pub use pieces::*;
 
+fn get_rook_castle_pos(player: Player, is_east: bool) -> (usize, usize) {
+    match (player, is_east) {
+        (Player::White, false) => (0, 3),
+        (Player::White, true) => (7, 5),
+        (Player::Black, false) => (56, 59),
+        (Player::Black, true) => (63, 61),
+    }
+}
+
 lazy_static! {
     static ref NUM_SQUARES_TO_EDGE: [[usize; 8]; 64] = {
         let mut squares_to_edge = [[0; 8]; 64];
@@ -240,6 +249,17 @@ impl Board {
             self.en_passant = None;
         }
 
+        let is_king = self.squares[*umove.from] & Piece::PieceType == Piece::King;
+        let move_dist = *umove.to as isize - *umove.from as isize;
+        if is_king && move_dist.abs() == 2 {
+            // this move is a castle; move the rook
+            let (rook_from, rook_to) = get_rook_castle_pos(self.active_color, move_dist > 0);
+            self.squares[rook_to] = self.squares[rook_from];
+            self.squares[rook_from] = Piece::empty();
+            self.castle_rights.revoke_all(self.active_color);
+        }
+
+        // move the piece
         self.squares[*umove.to] = self.squares[*umove.from];
         self.squares[*umove.from] = Piece::empty();
 
@@ -430,6 +450,68 @@ impl Board {
         }
 
         // Castling
+        self.generate_king_castle_directions(moves, start, Direction::West);
+        self.generate_king_castle_directions(moves, start, Direction::East);
+    }
+
+    fn generate_king_castle_directions<'b, 'v>(
+        &'b self,
+        moves: &'v mut Vec<Move<'b>>,
+        start: BoardIdx,
+        dir: Direction,
+    ) {
+        if cfg!(debug_assertions) {
+            assert!(dir == Direction::West || dir == Direction::East);
+        }
+
+        let needed_castle_right = match (self.active_color, dir) {
+            (Player::White, Direction::West) => CastleRights::WhiteQueenSide,
+            (Player::White, Direction::East) => CastleRights::WhiteKingSide,
+            (Player::Black, Direction::West) => CastleRights::BlackQueenSide,
+            (Player::Black, Direction::East) => CastleRights::BlackKingSide,
+            _ => panic!("generate_king_castle_directions called with a direction other than `West` or `East`")
+        };
+
+        let squares_to_edge = squares_to_edge(start, dir);
+        let has_castle_right = self.castle_rights.has_right(needed_castle_right);
+
+        if squares_to_edge < 2 || !has_castle_right {
+            return;
+        }
+
+        if cfg!(debug_assertions) {
+            // since the player still has their castle rights,
+            //     we can do some extra checks in debug mode
+            if self.active_color == Player::White {
+                // ensure that the king is on its starting square
+                assert_eq!(*start, 4);
+                // ensure that the king side rook is still there
+                assert_eq!(self.squares[7], Piece::White | Piece::Rook);
+            } else {
+                // ensure that the king is on its starting square
+                assert_eq!(*start, 60);
+                // ensure that the king side rook is still there
+                assert_eq!(self.squares[63], Piece::Black | Piece::Rook);
+            }
+        }
+
+        if self.squares[*start + 1] != Piece::empty() {
+            // a piece is in the way
+            return;
+        }
+        let target = BoardIdx::unew((*start as isize + dir.offset() * 2) as usize);
+        let target_piece = self.piece_at(target);
+
+        if target_piece != Piece::empty() {
+            // a piece is in the way
+            return;
+        }
+
+        moves.push(Move {
+            _board: self,
+            from: start,
+            to: target,
+        });
     }
 
     pub fn active_color(&self) -> Player {
