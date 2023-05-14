@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use hourglass_engine::BoardIdx;
+use hourglass_engine::Move;
 use hourglass_engine::Piece;
-use hourglass_engine::UMove;
 
 use crate::piece::PieceExt;
 
@@ -269,7 +269,7 @@ fn drop_piece_on(
         .get(event.target)
         .expect("this should be called on a piece");
 
-    let _ = board.try_move(UMove::from_idxs(from_square.idx, this.idx));
+    let _ = board.try_move(Move::from_idxs(from_square.idx, this.idx));
 
     Bubble::Burst
 }

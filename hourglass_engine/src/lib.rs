@@ -82,17 +82,25 @@ pub enum InvalidMoveErr {
     IllegalMove,
 }
 
-/// An unchecked move.
+/// A checked move.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct UMove {
+pub struct Move {
     from: BoardIdx,
     to: BoardIdx,
 }
 
-impl UMove {
+impl Move {
+    pub fn to(&self) -> BoardIdx {
+        self.to
+    }
+
+    pub fn from(&self) -> BoardIdx {
+        self.from
+    }
+
     /// From unwrapped indicies.
     pub fn from_uidxs(from: usize, to: usize) -> Self {
-        UMove {
+        Move {
             from: BoardIdx::unew(from),
             to: BoardIdx::unew(to),
         }
@@ -100,7 +108,7 @@ impl UMove {
 
     /// From board indicies.
     pub fn from_idxs(from: BoardIdx, to: BoardIdx) -> Self {
-        UMove { from, to }
+        Move { from, to }
     }
 
     /// From a string move.
@@ -113,25 +121,7 @@ impl UMove {
         let from = idx_from_pos(from)?;
         let to = idx_from_pos(to)?;
 
-        Some(UMove { from, to })
-    }
-}
-
-/// A checked move.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct Move<'b> {
-    _board: &'b Board,
-    from: BoardIdx,
-    to: BoardIdx,
-}
-
-impl<'b> Move<'b> {
-    pub fn to(&self) -> BoardIdx {
-        self.to
-    }
-
-    pub fn from(&self) -> BoardIdx {
-        self.from
+        Some(Move { from, to })
     }
 }
 
@@ -217,7 +207,7 @@ impl Board {
         }
     }
 
-    pub fn try_move(&mut self, umove: UMove) -> Result<(), InvalidMoveErr> {
+    pub fn try_move(&mut self, umove: Move) -> Result<(), InvalidMoveErr> {
         // check if the player owns the piece they are trying to move
         if self.squares[*umove.from] & self.active_color.to_piece_color() == Piece::empty() {
             return Err(InvalidMoveErr::NotYourPiece);
@@ -279,7 +269,7 @@ impl Board {
         moves
     }
 
-    pub fn get_moves_for<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, idx: BoardIdx) {
+    pub fn get_moves_for<'b, 'v>(&'b self, moves: &'v mut Vec<Move>, idx: BoardIdx) {
         let piece = self.piece_at(idx);
 
         if !piece.is_color(self.active_color) {
@@ -298,12 +288,7 @@ impl Board {
         }
     }
 
-    fn generate_sliding_moves<'b, 'v>(
-        &'b self,
-        moves: &'v mut Vec<Move<'b>>,
-        start: BoardIdx,
-        piece: Piece,
-    ) {
+    fn generate_sliding_moves(&self, moves: &mut Vec<Move>, start: BoardIdx, piece: Piece) {
         let directions = match piece & Piece::PieceType {
             Piece::Bishop => &Direction::BISHOP[..],
             Piece::Rook => &Direction::ROOK[..],
@@ -322,7 +307,6 @@ impl Board {
                 }
 
                 moves.push(Move {
-                    _board: self,
                     from: start,
                     to: BoardIdx::unew(target),
                 });
@@ -334,7 +318,7 @@ impl Board {
         }
     }
 
-    fn generate_knight_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+    fn generate_knight_moves(&self, moves: &mut Vec<Move>, start: BoardIdx) {
         const KNIGHT_MOVES: [(isize, isize); 8] = [
             (-2, 1),
             (-1, 2),
@@ -366,7 +350,6 @@ impl Board {
                 let target = BoardIdx::unew((*start as isize + (dy * 8) + dx) as usize);
                 if !self.piece_at(target).is_color(self.active_color) {
                     moves.push(Move {
-                        _board: self,
                         from: start,
                         to: target,
                     });
@@ -375,7 +358,7 @@ impl Board {
         }
     }
 
-    fn generate_pawn_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+    fn generate_pawn_moves(&self, moves: &mut Vec<Move>, start: BoardIdx) {
         if squares_to_edge(start, self.active_color.forward_dir()) < 1 {
             return;
         }
@@ -387,7 +370,6 @@ impl Board {
             if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
             {
                 moves.push(Move {
-                    _board: self,
                     from: start,
                     to: target,
                 });
@@ -398,7 +380,6 @@ impl Board {
             if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
             {
                 moves.push(Move {
-                    _board: self,
                     from: start,
                     to: target,
                 });
@@ -407,7 +388,6 @@ impl Board {
 
         if self.squares[forward_target] == Piece::empty() {
             moves.push(Move {
-                _board: self,
                 from: start,
                 to: BoardIdx::unew(forward_target),
             });
@@ -423,14 +403,13 @@ impl Board {
                 BoardIdx::unew((*start as isize + self.active_color.forward_value() * 16) as usize);
             if self.piece_at(target) == Piece::empty() {
                 moves.push(Move {
-                    _board: self,
                     from: start,
                     to: target,
                 })
             }
         }
     }
-    pub fn generate_king_moves<'b, 'v>(&'b self, moves: &'v mut Vec<Move<'b>>, start: BoardIdx) {
+    pub fn generate_king_moves(&self, moves: &mut Vec<Move>, start: BoardIdx) {
         for dir in Direction::ALL {
             if squares_to_edge(start, dir) >= 1 {
                 let target = BoardIdx::unew((*start as isize + dir.offset()) as usize);
@@ -442,7 +421,6 @@ impl Board {
                 }
 
                 moves.push(Move {
-                    _board: self,
                     from: start,
                     to: target,
                 });
@@ -454,9 +432,9 @@ impl Board {
         self.generate_king_castle_directions(moves, start, Direction::East);
     }
 
-    fn generate_king_castle_directions<'b, 'v>(
-        &'b self,
-        moves: &'v mut Vec<Move<'b>>,
+    fn generate_king_castle_directions(
+        &self,
+        moves: &mut Vec<Move>,
         start: BoardIdx,
         dir: Direction,
     ) {
@@ -464,18 +442,15 @@ impl Board {
             assert!(dir == Direction::West || dir == Direction::East);
         }
 
-        let needed_castle_right = match (self.active_color, dir) {
-            (Player::White, Direction::West) => CastleRights::WhiteQueenSide,
-            (Player::White, Direction::East) => CastleRights::WhiteKingSide,
-            (Player::Black, Direction::West) => CastleRights::BlackQueenSide,
-            (Player::Black, Direction::East) => CastleRights::BlackKingSide,
+        let (needed_castle_right, squares_in_between) = match (self.active_color, dir) {
+            (Player::White, Direction::West) => (CastleRights::WhiteQueenSide, -3..=-1),
+            (Player::White, Direction::East) => (CastleRights::WhiteKingSide, 1..=2),
+            (Player::Black, Direction::West) => (CastleRights::BlackQueenSide, -3..=-1),
+            (Player::Black, Direction::East) => (CastleRights::BlackKingSide, 1..=2),
             _ => panic!("generate_king_castle_directions called with a direction other than `West` or `East`")
         };
 
-        let squares_to_edge = squares_to_edge(start, dir);
-        let has_castle_right = self.castle_rights.has_right(needed_castle_right);
-
-        if squares_to_edge < 2 || !has_castle_right {
+        if !self.castle_rights.has_right(needed_castle_right) {
             return;
         }
 
@@ -495,10 +470,14 @@ impl Board {
             }
         }
 
-        if self.squares[*start + 1] != Piece::empty() {
-            // a piece is in the way
-            return;
+        for i in squares_in_between {
+            let idx = (*start as isize + i) as usize;
+            if self.squares[idx] != Piece::empty() {
+                // a piece is in the way
+                return;
+            }
         }
+
         let target = BoardIdx::unew((*start as isize + dir.offset() * 2) as usize);
         let target_piece = self.piece_at(target);
 
@@ -508,7 +487,6 @@ impl Board {
         }
 
         moves.push(Move {
-            _board: self,
             from: start,
             to: target,
         });
@@ -549,12 +527,12 @@ fn idx_from_pos(pos: &str) -> Option<BoardIdx> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Board, UMove};
+    use crate::{Board, Move};
 
     #[test]
     fn test_try_move() {
         let mut board = Board::new();
         // e2 to e4 should be a valid starting move.
-        board.try_move(UMove::new("e2e4").unwrap()).unwrap();
+        board.try_move(Move::new("e2e4").unwrap()).unwrap();
     }
 }
