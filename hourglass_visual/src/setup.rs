@@ -50,6 +50,9 @@ pub(crate) struct BoardSquare {
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PickedPiece;
 
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PromotionMenu;
+
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -74,9 +77,30 @@ fn setup(
 
     commands.insert_resource(Board::new());
 
+    spawn_promotion_menu(&mut commands, atlas_handle.clone());
     spawn_board(&mut commands, light_color, dark_color, meshes);
     spawn_pieces(&mut commands, atlas_handle);
     spawn_move_hints(&mut commands, move_hint_assets);
+}
+
+fn spawn_promotion_menu(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
+    const PIECES: [Piece; 4] = [Piece::Bishop, Piece::Rook, Piece::Knight, Piece::Queen];
+
+    for piece in PIECES {
+        commands.spawn((
+            SpriteSheetBundle {
+                sprite: TextureAtlasSprite {
+                    custom_size: Some(Vec2::new(SQUARE_SIZE, SQUARE_SIZE)),
+                    index: piece.get_texture_idx(),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+                texture_atlas: texture_atlas.clone(),
+                ..default()
+            },
+            PromotionMenu,
+        ));
+    }
 }
 
 fn spawn_move_hints(commands: &mut Commands, move_hint_assets: MoveHintAssets) {

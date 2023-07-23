@@ -4,19 +4,27 @@ mod setup;
 use bevy::prelude::*;
 use bevy_editor_pls::EditorPlugin;
 use bevy_mod_picking::low_latency_window_plugin;
+use hourglass_engine::Move;
 use piece::PieceExt;
-use setup::{Board, BoardPiece, MoveHint, MoveHintAssets, PickedPiece, SetupPlugin};
+use setup::{Board, BoardPiece, MoveHint, MoveHintAssets, PickedPiece, PromotionMenu, SetupPlugin};
+
+#[derive(Debug, Copy, Clone, Resource, Default)]
+struct PromotingPiece {
+    o_move: Option<Move>,
+}
 
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins.set(low_latency_window_plugin()))
+    app.insert_resource(PromotingPiece::default())
+        .add_plugins(DefaultPlugins.set(low_latency_window_plugin()))
         .add_plugin(EditorPlugin::default())
         .add_plugins(bevy_mod_picking::DefaultPickingPlugins)
         .add_plugin(SetupPlugin)
         .add_system(update_pieces)
         .add_system(show_moves)
         .add_system(clear_moves)
+        .add_system(show_promotion_options)
         .run();
 }
 
@@ -65,4 +73,26 @@ fn update_pieces(board: Res<Board>, mut q_piece: Query<(&BoardPiece, &mut Textur
     for (piece, mut texture) in q_piece.iter_mut() {
         texture.index = board.piece_at(piece.idx).get_texture_idx();
     }
+}
+
+fn show_promotion_options(
+    promoting_piece: ResMut<PromotingPiece>,
+    mut q_promotion_menu: Query<&mut Visibility, With<PromotionMenu>>,
+) {
+    if !promoting_piece.is_changed() {
+        return;
+    }
+
+    match promoting_piece.o_move {
+        Some(piece) => {
+            for mut vis in q_promotion_menu.iter_mut() {
+                *vis = Visibility::Visible;
+            }
+        }
+        None => {
+            for mut vis in q_promotion_menu.iter_mut() {
+                *vis = Visibility::Hidden;
+            }
+        }
+    };
 }
