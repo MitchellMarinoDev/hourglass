@@ -4,7 +4,7 @@ mod setup;
 use bevy::prelude::*;
 use bevy_editor_pls::EditorPlugin;
 use bevy_mod_picking::low_latency_window_plugin;
-use hourglass_engine::Move;
+use hourglass_engine::{BoardIdx, Move, Piece};
 use piece::PieceExt;
 use setup::{Board, BoardPiece, MoveHint, MoveHintAssets, PickedPiece, PromotionMenu, SetupPlugin};
 
@@ -38,8 +38,13 @@ fn show_moves(
         let mut moves = Vec::new();
         board.get_moves_for(&mut moves, picked_piece.idx);
 
-        println!("{:?}", board);
+        println!("{:?}", moves);
 
+        println!(
+            "eq issue? {}",
+            Move::new(BoardIdx::unew(12), BoardIdx::unew(21), Some(Piece::Knight))
+                == Move::new(BoardIdx::unew(12), BoardIdx::unew(21), Some(Piece::King))
+        );
         for (mut image, hint) in q_move_hits.iter_mut() {
             if moves.iter().any(|m| m.to() == hint.idx) {
                 let new_image = if board.piece_at(hint.idx).is_color(!board.active_color()) {
@@ -85,11 +90,13 @@ fn show_promotion_options(
 
     match promoting_piece.o_move {
         Some(piece) => {
+            warn!("showing emnue");
             for mut vis in q_promotion_menu.iter_mut() {
                 *vis = Visibility::Visible;
             }
         }
         None => {
+            warn!("hiding emnue");
             for mut vis in q_promotion_menu.iter_mut() {
                 *vis = Visibility::Hidden;
             }

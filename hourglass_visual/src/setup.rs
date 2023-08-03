@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
 use hourglass_engine::BoardIdx;
+use hourglass_engine::InvalidMoveErr;
 use hourglass_engine::Move;
 use hourglass_engine::Piece;
 
 use crate::piece::PieceExt;
+use crate::PromotingPiece;
 
 const SQUARE_SIZE: f32 = 100.;
 
@@ -50,14 +52,14 @@ pub(crate) struct BoardSquare {
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PickedPiece;
 
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PromotionMenu;
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PromotionMenu(Piece);
 
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-    meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     commands.spawn((Camera2dBundle::default(), RaycastPickCamera::default()));
 
@@ -77,16 +79,27 @@ fn setup(
 
     commands.insert_resource(Board::new());
 
-    spawn_promotion_menu(&mut commands, atlas_handle.clone());
-    spawn_board(&mut commands, light_color, dark_color, meshes);
+    spawn_promotion_menu(&mut commands, atlas_handle.clone(), &mut meshes);
+    spawn_board(&mut commands, light_color, dark_color, &mut meshes);
     spawn_pieces(&mut commands, atlas_handle);
     spawn_move_hints(&mut commands, move_hint_assets);
 }
 
-fn spawn_promotion_menu(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
-    const PIECES: [Piece; 4] = [Piece::Bishop, Piece::Rook, Piece::Knight, Piece::Queen];
+fn spawn_promotion_menu(
+    commands: &mut Commands,
+    texture_atlas: Handle<TextureAtlas>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+) {
+    let mesh = meshes.add(Mesh::from(shape::Quad::new(Vec2::splat(100.))));
 
-    for piece in PIECES {
+    let pieces: [Piece; 4] = [
+        Piece::White | Piece::Bishop,
+        Piece::White | Piece::Rook,
+        Piece::White | Piece::Knight,
+        Piece::White | Piece::Queen,
+    ];
+
+    for (idx, piece) in pieces.into_iter().enumerate() {
         commands.spawn((
             SpriteSheetBundle {
                 sprite: TextureAtlasSprite {
@@ -94,13 +107,49 @@ fn spawn_promotion_menu(commands: &mut Commands, texture_atlas: Handle<TextureAt
                     index: piece.get_texture_idx(),
                     ..default()
                 },
-                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+                transform: Transform::from_translation(Vec3::new(
+                    -475.0,
+                    (idx as f32 - 1.5) * 100.0,
+                    0.0,
+                )),
                 texture_atlas: texture_atlas.clone(),
                 ..default()
             },
-            PromotionMenu,
+            mesh.clone(),
+            PromotionMenu(piece),
+            Name::new("PromotionMenu"),
+            RaycastPickTarget::default(),
+            PickableBundle::default(),
+            OnPointer::<Click>::run_callback(select_promotion),
         ));
     }
+}
+
+fn select_promotion(
+    In(event): In<ListenedEvent<Click>>,
+    q_promotion_menu: Query<&PromotionMenu>,
+    mut promoting_piece: ResMut<PromotingPiece>,
+    mut board: ResMut<Board>,
+) -> Bubble {
+    let piece = q_promotion_menu.get(event.target).unwrap().0;
+
+    let move_result = board.try_move(
+        promoting_piece
+            .o_move
+            .unwrap()
+            .with_promote(Some(piece & Piece::PieceType)),
+    );
+
+    match move_result {
+        Ok(()) => {}
+        Err(e) => {
+            warn!("Error moving piece: {e:?}");
+        }
+    }
+
+    promoting_piece.o_move = None;
+
+    Bubble::Burst
 }
 
 fn spawn_move_hints(commands: &mut Commands, move_hint_assets: MoveHintAssets) {
@@ -161,7 +210,7 @@ fn spawn_board(
     commands: &mut Commands,
     light_color: Color,
     dark_color: Color,
-    mut meshes: ResMut<Assets<Mesh>>,
+    meshes: &mut ResMut<Assets<Mesh>>,
 ) {
     let mesh = meshes.add(Mesh::from(shape::Quad::new(Vec2::splat(100.))));
 
@@ -279,6 +328,7 @@ fn move_piece(
 
 fn drop_piece_on(
     In(event): In<ListenedEvent<Drop>>,
+    mut promoting_piece: ResMut<PromotingPiece>,
     mut board: ResMut<Board>,
     q_board_square: Query<&BoardSquare>,
 ) -> Bubble {
@@ -291,9 +341,17 @@ fn drop_piece_on(
     };
     let this = q_board_square
         .get(event.target)
-        .expect("this should be called on a piece");
+        .expect("this should be called on a board square");
 
-    let _ = board.try_move(Move::from_idxs(from_square.idx, this.idx));
+    let umove = Move::from_idxs(from_square.idx, this.idx);
+    match board.try_move(umove) {
+        Ok(()) => {}
+        Err(InvalidMoveErr::NoPromotion) => {
+            warn!("No Promotion!");
+            promoting_piece.o_move = Some(umove);
+        }
+        Err(_) => {}
+    }
 
     Bubble::Burst
 }

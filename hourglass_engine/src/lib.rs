@@ -80,6 +80,8 @@ pub enum InvalidMoveErr {
     NotYourPiece,
     /// That piece cannot move there.
     IllegalMove,
+    /// You need to add a promotion to the piece.
+    NoPromotion,
 }
 
 /// A checked move.
@@ -87,6 +89,7 @@ pub enum InvalidMoveErr {
 pub struct Move {
     from: BoardIdx,
     to: BoardIdx,
+    promote: Option<Piece>,
 }
 
 impl Move {
@@ -103,16 +106,27 @@ impl Move {
         Move {
             from: BoardIdx::unew(from),
             to: BoardIdx::unew(to),
+            promote: None,
         }
+    }
+
+    // Creates a new Move with the same `to` and `from`, adding a promote piece.
+    #[must_use]
+    pub fn with_promote(&self, promote: Option<Piece>) -> Self {
+        Move { promote, ..*self }
     }
 
     /// From board indicies.
     pub fn from_idxs(from: BoardIdx, to: BoardIdx) -> Self {
-        Move { from, to }
+        Move {
+            from,
+            to,
+            promote: None,
+        }
     }
 
     /// From a string move.
-    pub fn new(str: &str) -> Option<Self> {
+    pub fn from_str(str: &str) -> Option<Self> {
         if str.len() != 4 {
             return None;
         }
@@ -121,9 +135,30 @@ impl Move {
         let from = idx_from_pos(from)?;
         let to = idx_from_pos(to)?;
 
-        Some(Move { from, to })
+        Some(Move {
+            from,
+            to,
+            promote: None,
+        })
+    }
+
+    pub fn new(from: BoardIdx, to: BoardIdx, promote: Option<Piece>) -> Self {
+        Move { from, to, promote }
     }
 }
+
+// impl PartialEq for Move {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.from == other.from
+//             && self.to == other.to
+//             && match (self.promote, other.promote) {
+//                 (None, None) => true,
+//                 (Some(_), None) => false,
+//                 (None, Some(_)) => false,
+//                 (Some(self_piece), Some(other_piece)) => self_piece.bits() == other_piece.bits(),
+//             }
+//     }
+// }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Direction {
@@ -212,11 +247,26 @@ impl Board {
         if self.squares[*umove.from] & self.active_color.to_piece_color() == Piece::empty() {
             return Err(InvalidMoveErr::NotYourPiece);
         }
+        let mut resulting_piece = self.squares[*umove.from];
+
+        let to_rank = *umove.to / 8;
+        if self.squares[*umove.from] & Piece::PieceType == Piece::Pawn
+            && (to_rank == 0 || to_rank == 7)
+        {
+            // Pawn will promote
+            match umove.promote {
+                None => return Err(InvalidMoveErr::NoPromotion),
+                Some(promoting_piece) => {
+                    resulting_piece = promoting_piece | self.active_color.to_piece_color()
+                }
+            }
+        }
 
         let mut moves = vec![];
         self.get_moves_for(&mut moves, umove.from);
-        if !moves.iter().any(|m| m.to == umove.to) {
+        if !moves.iter().any(|m| *m == umove) {
             // invalid move
+            println!("Illegal Move: {:?}", umove);
             return Err(InvalidMoveErr::IllegalMove);
         }
 
@@ -246,11 +296,32 @@ impl Board {
             let (rook_from, rook_to) = get_rook_castle_pos(self.active_color, move_dist > 0);
             self.squares[rook_to] = self.squares[rook_from];
             self.squares[rook_from] = Piece::empty();
+        }
+        if is_king {
+            // moving the king revokes it's castle rights
             self.castle_rights.revoke_all(self.active_color);
+        }
+        if self.squares[*umove.from] & Piece::PieceType == Piece::Rook {
+            // if a rook moves from it's starting square, it revokes the castling rights in that direction
+            if self.active_color == Player::White {
+                if *umove.from == 0 {
+                    self.castle_rights.revoke(CastleRights::WhiteQueenSide);
+                }
+                if *umove.from == 7 {
+                    self.castle_rights.revoke(CastleRights::WhiteKingSide);
+                }
+            } else {
+                if *umove.from == 56 {
+                    self.castle_rights.revoke(CastleRights::BlackQueenSide);
+                }
+                if *umove.from == 63 {
+                    self.castle_rights.revoke(CastleRights::BlackKingSide);
+                }
+            }
         }
 
         // move the piece
-        self.squares[*umove.to] = self.squares[*umove.from];
+        self.squares[*umove.to] = resulting_piece;
         self.squares[*umove.from] = Piece::empty();
 
         self.active_color = !self.active_color;
@@ -306,10 +377,7 @@ impl Board {
                     break;
                 }
 
-                moves.push(Move {
-                    from: start,
-                    to: BoardIdx::unew(target),
-                });
+                moves.push(Move::from_idxs(start, BoardIdx::unew(target)));
 
                 if target_piece.is_color(!self.active_color) {
                     break;
@@ -349,10 +417,7 @@ impl Board {
                 // target square is in bounds.
                 let target = BoardIdx::unew((*start as isize + (dy * 8) + dx) as usize);
                 if !self.piece_at(target).is_color(self.active_color) {
-                    moves.push(Move {
-                        from: start,
-                        to: target,
-                    });
+                    moves.push(Move::from_idxs(start, target));
                 }
             }
         }
@@ -369,31 +434,25 @@ impl Board {
             let target = BoardIdx::unew(forward_target - 1);
             if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
             {
-                moves.push(Move {
-                    from: start,
-                    to: target,
-                });
+                Self::add_pawn_move(moves, Move::from_idxs(start, target))
             }
         }
         if squares_to_edge(start, Direction::East) >= 1 {
             let target = BoardIdx::unew(forward_target + 1);
             if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
             {
-                moves.push(Move {
-                    from: start,
-                    to: target,
-                });
+                Self::add_pawn_move(moves, Move::from_idxs(start, target))
             }
         }
 
-        if self.squares[forward_target] == Piece::empty() {
-            moves.push(Move {
-                from: start,
-                to: BoardIdx::unew(forward_target),
-            });
-        } else {
+        if self.squares[forward_target] != Piece::empty() {
             return;
         }
+
+        Self::add_pawn_move(
+            moves,
+            Move::from_idxs(start, BoardIdx::unew(forward_target)),
+        );
 
         // if it is on the starting rank, it can move forward 2.
         if (self.active_color == Player::White && *start / 8 == 1)
@@ -402,13 +461,23 @@ impl Board {
             let target =
                 BoardIdx::unew((*start as isize + self.active_color.forward_value() * 16) as usize);
             if self.piece_at(target) == Piece::empty() {
-                moves.push(Move {
-                    from: start,
-                    to: target,
-                })
+                Self::add_pawn_move(moves, Move::from_idxs(start, target))
             }
         }
     }
+
+    fn add_pawn_move(moves: &mut Vec<Move>, umove: Move) {
+        let target_rank = *umove.to / 8;
+        // if the pawn made it to the first or last rank, it needs to promote
+        if target_rank == 0 || target_rank == 7 {
+            for promote in [Piece::Knight, Piece::Bishop, Piece::Rook, Piece::Queen] {
+                moves.push(umove.with_promote(Some(promote)));
+            }
+        } else {
+            moves.push(umove);
+        }
+    }
+
     pub fn generate_king_moves(&self, moves: &mut Vec<Move>, start: BoardIdx) {
         for dir in Direction::ALL {
             if squares_to_edge(start, dir) >= 1 {
@@ -419,11 +488,7 @@ impl Board {
                 if target_piece.is_color(self.active_color) {
                     continue;
                 }
-
-                moves.push(Move {
-                    from: start,
-                    to: target,
-                });
+                moves.push(Move::from_idxs(start, target));
             }
         }
 
@@ -458,15 +523,31 @@ impl Board {
             // since the player still has their castle rights,
             //     we can do some extra checks in debug mode
             if self.active_color == Player::White {
+                let rook_square = match needed_castle_right {
+                    CastleRights::WhiteKingSide => 7,
+                    CastleRights::WhiteQueenSide => 0,
+                    _ => panic!(
+                        "the needed castle right should be the same color as the active player"
+                    ),
+                };
+
                 // ensure that the king is on its starting square
                 assert_eq!(*start, 4);
-                // ensure that the king side rook is still there
-                assert_eq!(self.squares[7], Piece::White | Piece::Rook);
+                // ensure that the rook is still there
+                assert_eq!(self.squares[rook_square], Piece::White | Piece::Rook);
             } else {
+                let rook_square = match needed_castle_right {
+                    CastleRights::BlackKingSide => 7,
+                    CastleRights::BlackQueenSide => 0,
+                    _ => panic!(
+                        "the needed castle right should be the same color as the active player"
+                    ),
+                };
+
                 // ensure that the king is on its starting square
                 assert_eq!(*start, 60);
                 // ensure that the king side rook is still there
-                assert_eq!(self.squares[63], Piece::Black | Piece::Rook);
+                assert_eq!(self.squares[rook_square], Piece::Black | Piece::Rook);
             }
         }
 
@@ -486,10 +567,7 @@ impl Board {
             return;
         }
 
-        moves.push(Move {
-            from: start,
-            to: target,
-        });
+        moves.push(Move::from_idxs(start, target));
     }
 
     pub fn active_color(&self) -> Player {
@@ -533,6 +611,6 @@ mod tests {
     fn test_try_move() {
         let mut board = Board::new();
         // e2 to e4 should be a valid starting move.
-        board.try_move(Move::new("e2e4").unwrap()).unwrap();
+        board.try_move(Move::from_str("e2e4").unwrap()).unwrap();
     }
 }
