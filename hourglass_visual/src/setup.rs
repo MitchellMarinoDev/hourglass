@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use bevy_mod_picking::prelude::*;
-use hourglass_engine::BoardIdx;
 use hourglass_engine::InvalidMoveErr;
 use hourglass_engine::Move;
 use hourglass_engine::Piece;
@@ -29,7 +28,7 @@ impl Board {
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardPiece {
-    pub(crate) idx: BoardIdx,
+    pub(crate) idx: usize,
 }
 
 #[derive(Resource, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,12 +40,12 @@ pub struct MoveHintAssets {
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MoveHint {
-    pub(crate) idx: BoardIdx,
+    pub(crate) idx: usize,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardSquare {
-    pub(crate) idx: BoardIdx,
+    pub(crate) idx: usize,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -74,8 +73,8 @@ fn setup(
     };
     commands.insert_resource(move_hint_assets.clone());
 
-    let dark_color = Color::rgb(0.2, 0.6, 0.9);
-    let light_color = Color::rgb(0.9, 0.95, 1.);
+    let dark_color = Color::hex("#3399E5").unwrap();
+    let light_color = Color::hex("#E5F2FF").unwrap();
 
     commands.insert_resource(Board::new());
 
@@ -171,7 +170,7 @@ fn spawn_move_hints(commands: &mut Commands, move_hint_assets: MoveHintAssets) {
                     ..default()
                 },
                 MoveHint {
-                    idx: BoardIdx::unew(rank * 8 + file),
+                    idx: rank * 8 + file,
                 },
             ));
         }
@@ -199,7 +198,7 @@ fn spawn_pieces(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
                     ..default()
                 },
                 BoardPiece {
-                    idx: BoardIdx::unew(rank * 8 + file),
+                    idx: rank * 8 + file,
                 },
             ));
         }
@@ -251,7 +250,7 @@ fn spawn_square(
             ..default()
         },
         BoardSquare {
-            idx: BoardIdx::unew(rank * 8 + file),
+            idx: rank * 8 + file,
         },
         mesh,
         RaycastPickTarget::default(),
@@ -276,7 +275,7 @@ fn pickup_piece(
     let board_square = match q_board.get(event.target) {
         Ok(bs) => bs,
         Err(_) => {
-            info!("Target of drag start is not a board square");
+            warn!("Target of drag start is not a board square");
             return Bubble::Up;
         }
     };
@@ -284,7 +283,6 @@ fn pickup_piece(
     for (entity, piece) in q_piece.iter() {
         if piece.idx == board_square.idx {
             commands.entity(entity).insert(PickedPiece);
-            info!("Found piece");
         }
     }
     Bubble::Burst
@@ -303,8 +301,8 @@ fn drag_end(
         commands.entity(entity).remove::<PickedPiece>();
         // figure out a place to put the piece and change the board to reflect
         //     that
-        let rank = *piece.idx / 8;
-        let file = *piece.idx % 8;
+        let rank = piece.idx / 8;
+        let file = piece.idx % 8;
         let pos = Vec3::new(
             -3.5 * SQUARE_SIZE + file as f32 * SQUARE_SIZE,
             -3.5 * SQUARE_SIZE + rank as f32 * SQUARE_SIZE,
@@ -347,7 +345,6 @@ fn drop_piece_on(
     match board.try_move(umove) {
         Ok(()) => {}
         Err(InvalidMoveErr::NoPromotion) => {
-            warn!("No Promotion!");
             promoting_piece.o_move = Some(umove);
         }
         Err(_) => {}
