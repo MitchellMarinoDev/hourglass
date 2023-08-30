@@ -103,4 +103,21 @@ impl Piece {
             Piece::Queen | Piece::Rook | Piece::Bishop
         )
     }
+
+    pub fn score_value(&self) -> i32 {
+        let color_mult = match *self & Piece::PlayerType {
+            Piece::White => 1,
+            Piece::Black => -1,
+            _ => 0,
+        };
+        let value = match *self & Piece::PieceType {
+            Piece::Pawn => 1,
+            Piece::Knight => 3,
+            Piece::Bishop => 3,
+            Piece::Rook => 5,
+            Piece::Queen => 9,
+            _ => 0,
+        };
+        value * color_mult
+    }
 }

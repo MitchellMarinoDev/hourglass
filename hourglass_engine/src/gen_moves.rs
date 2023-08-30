@@ -214,6 +214,7 @@ impl Board {
                 // ensure that the king is on its starting square
                 assert_eq!(start, 60);
                 // ensure that the rook is still there
+                println!("{:?}", self.squares);
                 assert_eq!(self.squares[rook_square], Piece::Black | Piece::Rook);
             }
         }

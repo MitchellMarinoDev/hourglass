@@ -3,17 +3,37 @@ use bevy_mod_picking::prelude::*;
 use hourglass_engine::InvalidMoveErr;
 use hourglass_engine::Move;
 use hourglass_engine::Piece;
+use hourglass_engine::Player;
 
 use crate::piece::PieceExt;
 use crate::PromotingPiece;
 
 const SQUARE_SIZE: f32 = 100.;
 
+pub(crate) enum InputSource {
+    Bot {
+        score: fn(&hourglass_engine::Board) -> f32,
+        depth: u32,
+    },
+    Human,
+}
+
+#[derive(Resource)]
+pub(crate) struct InputSourceWhite(InputSource);
+#[derive(Resource)]
+pub(crate) struct InputSourceBlack(InputSource);
+
 pub(crate) struct SetupPlugin;
 
 impl Plugin for SetupPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup);
+        app.add_startup_system(setup)
+            .insert_resource(InputSourceWhite(InputSource::Human))
+            .insert_resource(InputSourceBlack(InputSource::Bot {
+                score: hourglass_engine::Board::bogo_score,
+                depth: 4,
+            }))
+            .add_system(bot_move);
     }
 }
 
@@ -82,6 +102,36 @@ fn setup(
     spawn_board(&mut commands, light_color, dark_color, &mut meshes);
     spawn_pieces(&mut commands, atlas_handle);
     spawn_move_hints(&mut commands, move_hint_assets);
+}
+
+fn bot_move(
+    mut board: ResMut<Board>,
+    input_white: Res<InputSourceWhite>,
+    input_black: Res<InputSourceBlack>,
+) {
+    if board.active_color() == Player::White {
+        match input_white.0 {
+            InputSource::Human => {}
+            InputSource::Bot { score, depth } => {
+                let umove = board.get_best_move(depth, score).unwrap();
+                match board.try_move(umove) {
+                    Ok(()) => {}
+                    Err(e) => error!("Error playing best move {:?}", e),
+                }
+            }
+        }
+    } else {
+        match input_black.0 {
+            InputSource::Human => {}
+            InputSource::Bot { score, depth } => {
+                let umove = board.get_best_move(depth, score).unwrap();
+                match board.try_move(umove) {
+                    Ok(()) => {}
+                    Err(e) => error!("Error playing best move {:?}", e),
+                }
+            }
+        }
+    }
 }
 
 fn spawn_promotion_menu(

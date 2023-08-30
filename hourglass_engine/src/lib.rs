@@ -1,3 +1,4 @@
+mod ai;
 mod fen;
 mod gen_attacks;
 mod gen_moves;

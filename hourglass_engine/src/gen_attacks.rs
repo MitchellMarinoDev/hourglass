@@ -1,6 +1,11 @@
 use crate::{squares_to_edge, Board, Direction, Piece, Player};
 
 impl Board {
+    pub fn is_in_check(&self, player: Player) -> bool {
+        let king_pos = self.find_king(player);
+        self.generate_attacks(player)[king_pos]
+    }
+
     /// Gets the squares attacked by the given player
     pub fn generate_attacks(&self, player: Player) -> [bool; 64] {
         let mut map = [false; 64];
