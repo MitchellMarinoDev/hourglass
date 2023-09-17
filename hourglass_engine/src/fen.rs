@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
 use crate::{
-    idx_from_pos,
+    idx_to_square_name,
     pieces::{CastleRights, Piece, Player},
-    Board,
+    square_name_to_idx, Board,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -100,7 +100,7 @@ impl Board {
 
         self.parse_board(board)?;
         self.parse_active_color(active_color)?;
-        self.fun_name(castling)?;
+        self.parse_castling(castling)?;
         self.parse_en_passant(en_passant)?;
         self.parse_halfmove(halfmove)?;
         self.parse_fullmove(fullmove)?;
@@ -133,6 +133,21 @@ impl Board {
                 continue;
             }
             if let Some(num) = c.to_digit(10) {
+                let num = num as usize;
+
+                for idx in 0..num {
+                    let square =
+                        self.squares
+                            .get_mut(rank * 8 + file + idx)
+                            .ok_or(FenParseErr::invalid(
+                                FenPart::Board,
+                                char_idx,
+                                "overran board",
+                            ))?;
+
+                    *square = Piece::empty();
+                }
+
                 file += num as usize;
             } else {
                 let piece = piece_from_fen(c).ok_or(FenParseErr::invalid(
@@ -154,7 +169,7 @@ impl Board {
         })
     }
 
-    fn fun_name(&mut self, castling: &str) -> Result<(), FenParseErr> {
+    fn parse_castling(&mut self, castling: &str) -> Result<(), FenParseErr> {
         for (c_idx, c) in castling.chars().enumerate() {
             match c {
                 'K' => self.castle_rights |= CastleRights::WhiteKingSide,
@@ -179,7 +194,7 @@ impl Board {
             return Ok(());
         }
 
-        let idx = idx_from_pos(en_passant).ok_or(FenParseErr::invalid(
+        let idx = square_name_to_idx(en_passant).ok_or(FenParseErr::invalid(
             FenPart::EnPassant,
             0,
             "the en passant section must be a board position or a '-'",
@@ -209,5 +224,72 @@ impl Board {
             )
         })?;
         Ok(())
+    }
+
+    pub fn get_fen(&self) -> String {
+        let piece_placement = self.get_fen_piece_placement();
+        let active_color = match self.active_color {
+            Player::White => 'w',
+            Player::Black => 'b',
+        };
+        let castle_rights = self.castle_rights.to_fen();
+        let en_passant = self.get_fen_en_passant();
+        let half_move = self.halfmove;
+        let full_move = self.fullmove;
+
+        format!(
+            "{} {} {} {} {} {}",
+            piece_placement, active_color, castle_rights, en_passant, half_move, full_move
+        )
+    }
+
+    fn get_fen_piece_placement(&self) -> String {
+        let mut output = String::new();
+
+        for rank in (0..8).rev() {
+            let mut empty = 0;
+            for file in 0..8 {
+                let piece = self.squares[rank * 8 + file];
+                if piece == Piece::empty() {
+                    empty += 1;
+                } else {
+                    if empty != 0 {
+                        output += &empty.to_string();
+                        empty = 0;
+                    }
+                    let mut piece_name = match piece & Piece::PieceType {
+                        Piece::King => "k",
+                        Piece::Queen => "q",
+                        Piece::Knight => "n",
+                        Piece::Bishop => "b",
+                        Piece::Rook => "r",
+                        Piece::Pawn => "p",
+                        _ => panic!("Invalid Piece {:?}", piece),
+                    }
+                    .to_string();
+
+                    if piece.is_color(Player::White) {
+                        piece_name = piece_name.to_uppercase();
+                    }
+
+                    output += &piece_name;
+                }
+            }
+            if empty != 0 {
+                output += &empty.to_string();
+            }
+            if rank != 0 {
+                output += "/"
+            }
+        }
+
+        output
+    }
+
+    fn get_fen_en_passant(&self) -> String {
+        self.en_passant
+            .map(|pos| idx_to_square_name(pos))
+            .flatten()
+            .unwrap_or("-".to_owned())
     }
 }

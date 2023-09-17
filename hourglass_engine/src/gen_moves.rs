@@ -17,7 +17,7 @@ impl Board {
     }
 
     pub fn get_moves_for<'b, 'v>(&'b self, moves: &'v mut Vec<Move>, idx: usize) {
-        let piece = self.piece_at(idx);
+        let piece = self.piece_at_idx(idx);
 
         if !piece.is_color(self.active_color) {
             return;
@@ -92,7 +92,7 @@ impl Board {
             {
                 // target square is in bounds.
                 let target = (start as isize + (dy * 8) + dx) as usize;
-                if !self.piece_at(target).is_color(self.active_color) {
+                if !self.piece_at_idx(target).is_color(self.active_color) {
                     self.add_move(moves, Move::from_idxs(start, target));
                 }
             }
@@ -108,14 +108,16 @@ impl Board {
         // pawns can take diagonally
         if squares_to_edge(start, Direction::West) >= 1 {
             let target = forward_target - 1;
-            if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
+            if self.piece_at_idx(target).is_color(!self.active_color)
+                || self.en_passant == Some(target)
             {
                 self.add_pawn_move(moves, Move::from_idxs(start, target))
             }
         }
         if squares_to_edge(start, Direction::East) >= 1 {
             let target = forward_target + 1;
-            if self.piece_at(target).is_color(!self.active_color) || self.en_passant == Some(target)
+            if self.piece_at_idx(target).is_color(!self.active_color)
+                || self.en_passant == Some(target)
             {
                 self.add_pawn_move(moves, Move::from_idxs(start, target))
             }
@@ -132,7 +134,7 @@ impl Board {
             || (self.active_color == Player::Black && start / 8 == 6)
         {
             let target = (start as isize + self.active_color.forward_value() * 16) as usize;
-            if self.piece_at(target) == Piece::empty() {
+            if self.piece_at_idx(target) == Piece::empty() {
                 self.add_pawn_move(moves, Move::from_idxs(start, target))
             }
         }
@@ -154,7 +156,7 @@ impl Board {
         for dir in Direction::ALL {
             if squares_to_edge(start, dir) >= 1 {
                 let target = (start as isize + dir.offset()) as usize;
-                let target_piece = self.piece_at(target);
+                let target_piece = self.piece_at_idx(target);
 
                 // Block by friendly
                 if target_piece.is_color(self.active_color) {
@@ -214,7 +216,6 @@ impl Board {
                 // ensure that the king is on its starting square
                 assert_eq!(start, 60);
                 // ensure that the rook is still there
-                println!("{:?}", self.squares);
                 assert_eq!(self.squares[rook_square], Piece::Black | Piece::Rook);
             }
         }
@@ -239,7 +240,7 @@ impl Board {
         }
 
         let target = (start as isize + dir.offset() * 2) as usize;
-        let target_piece = self.piece_at(target);
+        let target_piece = self.piece_at_idx(target);
 
         if target_piece != Piece::empty() {
             // a piece is in the way
@@ -252,7 +253,7 @@ impl Board {
     fn add_move<'b, 'v>(&'b self, moves: &'v mut Vec<Move>, umove: Move) {
         // you cannot move into check
         let mut new_board = self.clone();
-        new_board.unchecked_make_move(umove).unwrap();
+        new_board.make_simple_move(umove).unwrap();
         if new_board.generate_attacks(new_board.active_color())
             [new_board.find_king(!new_board.active_color())]
         {

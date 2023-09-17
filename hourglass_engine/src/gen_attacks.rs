@@ -25,7 +25,7 @@ impl Board {
         player: Player,
         idx: usize,
     ) {
-        let piece = self.piece_at(idx);
+        let piece = self.piece_at_idx(idx);
 
         let piece_type = piece & Piece::PieceType;
         if piece.is_sliding() {
@@ -102,7 +102,7 @@ impl Board {
             {
                 // target square is in bounds.
                 let target = (start as isize + (dy * 8) + dx) as usize;
-                if !self.piece_at(target).is_color(player) {
+                if !self.piece_at_idx(target).is_color(player) {
                     map[target] = true;
                 }
             }
@@ -117,13 +117,13 @@ impl Board {
 
         if squares_to_edge(start, Direction::West) >= 1 {
             let target = forward_target - 1;
-            if !self.piece_at(target).is_color(player) {
+            if !self.piece_at_idx(target).is_color(player) {
                 map[target] = true;
             }
         }
         if squares_to_edge(start, Direction::East) >= 1 {
             let target = forward_target + 1;
-            if !self.piece_at(target).is_color(player) {
+            if !self.piece_at_idx(target).is_color(player) {
                 map[target] = true;
             }
         }
@@ -133,7 +133,7 @@ impl Board {
         for dir in Direction::ALL {
             if squares_to_edge(start, dir) >= 1 {
                 let target = (start as isize + dir.offset()) as usize;
-                let target_piece = self.piece_at(target);
+                let target_piece = self.piece_at_idx(target);
 
                 // Block by friendly
                 if target_piece.is_color(player) {

@@ -4,9 +4,47 @@ mod gen_attacks;
 mod gen_moves;
 mod pieces;
 
+#[cfg(test)]
+mod test;
+
 use lazy_static::lazy_static;
 
 pub use pieces::*;
+
+fn square_name_to_idx(pos: &str) -> Option<usize> {
+    let mut pos_chars = pos.chars();
+    let mut idx = 0;
+
+    match pos_chars.next()? {
+        'a' => idx += 0,
+        'b' => idx += 1,
+        'c' => idx += 2,
+        'd' => idx += 3,
+        'e' => idx += 4,
+        'f' => idx += 5,
+        'g' => idx += 6,
+        'h' => idx += 7,
+        _ => return None,
+    }
+
+    match pos_chars.next().map(|c| c.to_digit(10)) {
+        Some(Some(v)) if (1..=8).contains(&v) => idx += ((v - 1) * 8) as usize,
+        _ => return None,
+    }
+
+    Some(idx)
+}
+
+fn idx_to_square_name(idx: usize) -> Option<String> {
+    if idx >= 64 {
+        return None;
+    }
+
+    let rank = ((idx / 8) + 1).to_string();
+    let file = ((idx % 8) as u8 + ('a' as u8)) as char;
+
+    Some(file.to_string() + &rank)
+}
 
 fn get_rook_castle_pos(player: Player, is_east: bool) -> (usize, usize) {
     match (player, is_east) {
@@ -62,7 +100,6 @@ pub enum InvalidMoveErr {
     NoPromotion,
 }
 
-/// A checked move.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Move {
     from: usize,
@@ -79,8 +116,7 @@ impl Move {
         self.from
     }
 
-    /// From unwrapped indicies.
-    pub fn from_uidxs(from: usize, to: usize) -> Self {
+    pub fn from_idxs(from: usize, to: usize) -> Self {
         Move {
             from,
             to,
@@ -94,15 +130,6 @@ impl Move {
         Move { promote, ..*self }
     }
 
-    /// From board indicies.
-    pub fn from_idxs(from: usize, to: usize) -> Self {
-        Move {
-            from,
-            to,
-            promote: None,
-        }
-    }
-
     /// From a string move.
     pub fn from_str(str: &str) -> Option<Self> {
         if str.len() != 4 {
@@ -110,8 +137,8 @@ impl Move {
         }
 
         let (from, to) = str.split_at(2);
-        let from = idx_from_pos(from)?;
-        let to = idx_from_pos(to)?;
+        let from = square_name_to_idx(from)?;
+        let to = square_name_to_idx(to)?;
 
         Some(Move {
             from,
@@ -124,19 +151,6 @@ impl Move {
         Move { from, to, promote }
     }
 }
-
-// impl PartialEq for Move {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.from == other.from
-//             && self.to == other.to
-//             && match (self.promote, other.promote) {
-//                 (None, None) => true,
-//                 (Some(_), None) => false,
-//                 (None, Some(_)) => false,
-//                 (Some(self_piece), Some(other_piece)) => self_piece.bits() == other_piece.bits(),
-//             }
-//     }
-// }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Direction {
@@ -242,7 +256,7 @@ impl Board {
         }
 
         // record en passant
-        if self.piece_at(umove.from) & Piece::PieceType == Piece::Pawn
+        if self.squares[umove.from] & Piece::PieceType == Piece::Pawn
             && (((umove.from as isize) - (umove.to as isize)).abs() == 16)
         {
             // pawn moved 2 spaces; record en passant
@@ -254,6 +268,7 @@ impl Board {
 
         let is_king = self.squares[umove.from] & Piece::PieceType == Piece::King;
         let move_dist = umove.to as isize - umove.from as isize;
+
         if is_king && move_dist.abs() == 2 {
             // this move is a castle; move the rook
             let (rook_from, rook_to) = get_rook_castle_pos(self.active_color, move_dist > 0);
@@ -284,10 +299,12 @@ impl Board {
         }
 
         // move the piece
-        self.unchecked_make_move(umove)
+        self.make_simple_move(umove)
     }
 
-    fn unchecked_make_move(&mut self, umove: Move) -> Result<(), InvalidMoveErr> {
+    /// Moves a piece from the `from` square to the `to` square.
+    /// Switches the `active_color`. This also handels promotions.
+    fn make_simple_move(&mut self, umove: Move) -> Result<(), InvalidMoveErr> {
         let mut resulting_piece = self.squares[umove.from];
 
         let to_rank = umove.to / 8;
@@ -324,33 +341,19 @@ impl Board {
         panic!("God save the king.");
     }
 
-    pub fn piece_at(&self, idx: usize) -> Piece {
+    /// Gets the piece at the given rank and file.
+    ///
+    /// The ranks/files are 0-indexed.
+    /// Therefore they should should be in the range `0..8`.
+    ///
+    /// This will return `Some` as long as both the rank and file are in range.
+    pub fn piece_at(&self, rank: usize, file: usize) -> Option<Piece> {
+        self.squares.get(rank * 8 + file).copied()
+    }
+
+    pub fn piece_at_idx(&self, idx: usize) -> Piece {
         self.squares[idx]
     }
-}
-
-fn idx_from_pos(pos: &str) -> Option<usize> {
-    let mut pos_chars = pos.chars();
-    let mut idx = 0;
-
-    match pos_chars.next() {
-        Some('a') => idx += 0 * 8,
-        Some('b') => idx += 1 * 8,
-        Some('c') => idx += 2 * 8,
-        Some('d') => idx += 3 * 8,
-        Some('e') => idx += 4 * 8,
-        Some('f') => idx += 5 * 8,
-        Some('g') => idx += 6 * 8,
-        Some('h') => idx += 7 * 8,
-        _ => return None,
-    }
-
-    match pos_chars.next().map(|c| c.to_digit(10)) {
-        Some(Some(v)) if (0..8).contains(&v) => idx += v as usize,
-        _ => return None,
-    }
-
-    Some(idx)
 }
 
 #[cfg(test)]

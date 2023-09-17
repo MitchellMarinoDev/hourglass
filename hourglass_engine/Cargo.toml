@@ -11,3 +11,6 @@ derive_more = "0.99.17"
 lazy_static = "1.4.0"
 log = "0.4.19"
 rand = "0.8.5"
+
+[dev-dependencies]
+chess = "3.2.0"

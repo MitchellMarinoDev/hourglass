@@ -50,6 +50,29 @@ impl CastleRights {
             }
         }
     }
+
+    pub fn to_fen(&self) -> String {
+        let mut output = String::new();
+
+        if self.has_right(CastleRights::WhiteKingSide) {
+            output += "K";
+        }
+        if self.has_right(CastleRights::WhiteQueenSide) {
+            output += "Q";
+        }
+        if self.has_right(CastleRights::BlackKingSide) {
+            output += "k";
+        }
+        if self.has_right(CastleRights::BlackQueenSide) {
+            output += "q";
+        }
+
+        if output.is_empty() {
+            output += "-";
+        }
+
+        output
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
