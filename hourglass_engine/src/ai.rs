@@ -32,7 +32,7 @@ impl Board {
 
         for (idx, umove) in moves.iter().enumerate() {
             let mut board = self.clone();
-            let _ = board.make_simple_move(*umove);
+            let _ = board.try_move(*umove).unwrap();
             let score = -board.search(depth - 1, &board.generate_moves(), scoring).1;
             if score > best_score {
                 best_score = score;
@@ -48,12 +48,12 @@ impl Board {
         rng.gen()
     }
 
-    pub fn score_material(&self) -> i32 {
+    pub fn score_material(&self) -> f32 {
         let current_color_mult = if self.active_color() == Player::Black {
-            -1
+            -1.
         } else {
-            1
+            1.
         };
-        self.squares.iter().map(Piece::score_value).sum::<i32>() * current_color_mult
+        self.squares.iter().map(Piece::score_value).sum::<i32>() as f32 * current_color_mult
     }
 }

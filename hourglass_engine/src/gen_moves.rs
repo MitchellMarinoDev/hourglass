@@ -191,6 +191,7 @@ impl Board {
         if cfg!(debug_assertions) {
             // since the player still has their castle rights,
             //     we can do some extra checks in debug mode
+            println!("Fen: \"{}\"", self.get_fen());
             if self.active_color == Player::White {
                 let rook_square = match needed_castle_right {
                     CastleRights::WhiteKingSide => 7,
@@ -206,8 +207,8 @@ impl Board {
                 assert_eq!(self.squares[rook_square], Piece::White | Piece::Rook);
             } else {
                 let rook_square = match needed_castle_right {
-                    CastleRights::BlackKingSide => 56,
-                    CastleRights::BlackQueenSide => 63,
+                    CastleRights::BlackKingSide => 63,
+                    CastleRights::BlackQueenSide => 56,
                     _ => panic!(
                         "the needed castle right should be the same color as the active player"
                     ),
@@ -216,7 +217,13 @@ impl Board {
                 // ensure that the king is on its starting square
                 assert_eq!(start, 60);
                 // ensure that the rook is still there
-                assert_eq!(self.squares[rook_square], Piece::Black | Piece::Rook);
+                assert_eq!(
+                    self.squares[rook_square],
+                    Piece::Black | Piece::Rook,
+                    "Tried to castle {:?} when the piece was not a rook. Castle Rights: {:?}",
+                    needed_castle_right,
+                    self.castle_rights,
+                );
             }
         }
 

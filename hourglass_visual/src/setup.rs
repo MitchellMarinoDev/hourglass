@@ -30,7 +30,7 @@ impl Plugin for SetupPlugin {
         app.add_startup_system(setup)
             .insert_resource(InputSourceWhite(InputSource::Human))
             .insert_resource(InputSourceBlack(InputSource::Bot {
-                score: hourglass_engine::Board::bogo_score,
+                score: hourglass_engine::Board::score_material,
                 depth: 4,
             }))
             .add_system(bot_move);

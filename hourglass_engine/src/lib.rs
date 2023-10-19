@@ -279,23 +279,19 @@ impl Board {
             // moving the king revokes it's castle rights
             self.castle_rights.revoke_all(self.active_color);
         }
-        if self.squares[umove.from] & Piece::PieceType == Piece::Rook {
-            // if a rook moves from it's starting square, it revokes the castling rights in that direction
-            if self.active_color == Player::White {
-                if umove.from == 0 {
-                    self.castle_rights.revoke(CastleRights::WhiteQueenSide);
-                }
-                if umove.from == 7 {
-                    self.castle_rights.revoke(CastleRights::WhiteKingSide);
-                }
-            } else {
-                if umove.from == 56 {
-                    self.castle_rights.revoke(CastleRights::BlackQueenSide);
-                }
-                if umove.from == 63 {
-                    self.castle_rights.revoke(CastleRights::BlackKingSide);
-                }
-            }
+        match umove.from {
+            0 => self.castle_rights.revoke(CastleRights::WhiteQueenSide),
+            7 => self.castle_rights.revoke(CastleRights::WhiteKingSide),
+            56 => self.castle_rights.revoke(CastleRights::BlackQueenSide),
+            63 => self.castle_rights.revoke(CastleRights::BlackKingSide),
+            _ => {}
+        }
+        match umove.to {
+            0 => self.castle_rights.revoke(CastleRights::WhiteQueenSide),
+            7 => self.castle_rights.revoke(CastleRights::WhiteKingSide),
+            56 => self.castle_rights.revoke(CastleRights::BlackQueenSide),
+            63 => self.castle_rights.revoke(CastleRights::BlackKingSide),
+            _ => {}
         }
 
         // move the piece

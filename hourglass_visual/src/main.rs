@@ -44,7 +44,7 @@ fn show_moves(
 
         for (mut image, hint) in q_move_hits.iter_mut() {
             if moves.iter().any(|m| m.to() == hint.idx) {
-                let new_image = if board.piece_at(hint.idx).is_color(!board.active_color()) {
+                let new_image = if board.piece_at_idx(hint.idx).is_color(!board.active_color()) {
                     move_hint_assets.take.clone()
                 } else {
                     move_hint_assets.open.clone()
@@ -98,7 +98,7 @@ fn update_pieces(board: Res<Board>, mut q_piece: Query<(&BoardPiece, &mut Textur
     }
 
     for (piece, mut texture) in q_piece.iter_mut() {
-        texture.index = board.piece_at(piece.idx).get_texture_idx();
+        texture.index = board.piece_at_idx(piece.idx).get_texture_idx();
     }
 }
 
