@@ -1,19 +1,16 @@
 mod piece;
 mod setup;
 
+use crate::piece::PieceExt;
 use bevy::prelude::*;
 use bevy_editor_pls::EditorPlugin;
 use bevy_mod_picking::low_latency_window_plugin;
-use hourglass_engine::Move;
-use piece::PieceExt;
-use setup::{
-    Board, BoardPiece, BoardSquare, MoveHint, MoveHintAssets, PickedPiece, PromotionMenu,
-    SetupPlugin,
-};
+use chess::ChessMove;
+use setup::{Board, BoardPiece, MoveHint, MoveHintAssets, PickedPiece, PromotionMenu, SetupPlugin};
 
 #[derive(Debug, Copy, Clone, Resource, Default)]
 struct PromotingPiece {
-    o_move: Option<Move>,
+    o_move: Option<ChessMove>,
 }
 
 fn main() {
@@ -39,12 +36,15 @@ fn show_moves(
     q_picked_piece: Query<&BoardPiece, (With<PickedPiece>, Added<PickedPiece>)>,
 ) {
     if let Ok(picked_piece) = q_picked_piece.get_single() {
-        let mut moves = Vec::new();
-        board.get_moves_for(&mut moves, picked_piece.idx);
+        let moves = chess::MoveGen::new_legal(&board)
+            .filter(|m| m.get_source() == picked_piece.square)
+            .collect::<Vec<_>>();
 
         for (mut image, hint) in q_move_hits.iter_mut() {
-            if moves.iter().any(|m| m.to() == hint.idx) {
-                let new_image = if board.piece_at_idx(hint.idx).is_color(!board.active_color()) {
+            if moves.iter().any(|m| m.get_dest() == hint.square) {
+                let is_capture = board.color_on(hint.square) == Some(!board.side_to_move());
+
+                let new_image = if is_capture {
                     move_hint_assets.take.clone()
                 } else {
                     move_hint_assets.open.clone()
@@ -55,30 +55,30 @@ fn show_moves(
     }
 }
 
-fn show_attacked_squares(
-    board: Res<Board>,
-    mut q_board_squares: Query<(&BoardSquare, &mut Sprite)>,
-) {
-    if !board.is_changed() {
-        return;
-    }
+// fn show_attacked_squares(
+//     board: Res<Board>,
+//     mut q_board_squares: Query<(&BoardSquare, &mut Sprite)>,
+// ) {
+//     if !board.is_changed() {
+//         return;
+//     }
 
-    let attacked_squares = board.generate_attacks(!board.active_color());
+//     let attacked_squares = board.generate_attacks(!board.active_color());
 
-    for (square, mut sprite) in q_board_squares.iter_mut() {
-        let idx = square.idx;
-        let attacked = attacked_squares[idx];
-        let light_square = ((idx / 8) + idx) % 2 == 0;
+//     for (square, mut sprite) in q_board_squares.iter_mut() {
+//         let idx = square.idx;
+//         let attacked = attacked_squares[idx];
+//         let light_square = ((idx / 8) + idx) % 2 == 0;
 
-        sprite.color = match (attacked, light_square) {
-            (true, true) => Color::hex("#FFF2FF"),
-            (true, false) => Color::hex("#9399E5"),
-            (false, true) => Color::hex("#E5F2FF"),
-            (false, false) => Color::hex("#3399E5"),
-        }
-        .unwrap();
-    }
-}
+//         sprite.color = match (attacked, light_square) {
+//             (true, true) => Color::hex("#FFF2FF"),
+//             (true, false) => Color::hex("#9399E5"),
+//             (false, true) => Color::hex("#E5F2FF"),
+//             (false, false) => Color::hex("#3399E5"),
+//         }
+//         .unwrap();
+//     }
+// }
 
 fn clear_moves(
     move_hint_assets: Res<MoveHintAssets>,
@@ -98,7 +98,9 @@ fn update_pieces(board: Res<Board>, mut q_piece: Query<(&BoardPiece, &mut Textur
     }
 
     for (piece, mut texture) in q_piece.iter_mut() {
-        texture.index = board.piece_at_idx(piece.idx).get_texture_idx();
+        texture.index = board
+            .piece_on(piece.square)
+            .get_texture_idx(board.color_on(piece.square).unwrap_or(chess::Color::White));
     }
 }
 

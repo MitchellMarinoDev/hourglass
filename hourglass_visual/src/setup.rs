@@ -1,18 +1,14 @@
-use bevy::prelude::*;
-use bevy_mod_picking::prelude::*;
-use hourglass_engine::InvalidMoveErr;
-use hourglass_engine::Move;
-use hourglass_engine::Piece;
-use hourglass_engine::Player;
-
 use crate::piece::PieceExt;
 use crate::PromotingPiece;
+use bevy::prelude::*;
+use bevy_mod_picking::prelude::*;
+use chess::{ChessMove, File, Piece, Rank, Square};
 
 const SQUARE_SIZE: f32 = 100.;
 
 pub(crate) enum InputSource {
     Bot {
-        score: fn(&hourglass_engine::Board) -> f32,
+        score: fn(&Board) -> f32,
         depth: u32,
     },
     Human,
@@ -30,7 +26,7 @@ impl Plugin for SetupPlugin {
         app.add_startup_system(setup)
             .insert_resource(InputSourceWhite(InputSource::Human))
             .insert_resource(InputSourceBlack(InputSource::Bot {
-                score: hourglass_engine::Board::score_material,
+                score: |b| 0.0,
                 depth: 4,
             }))
             .add_system(bot_move);
@@ -38,17 +34,17 @@ impl Plugin for SetupPlugin {
 }
 
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Deref, DerefMut)]
-pub(crate) struct Board(hourglass_engine::Board);
+pub(crate) struct Board(chess::Board);
 
 impl Board {
     pub fn new() -> Self {
-        Board(hourglass_engine::Board::new())
+        Board(chess::Board::default())
     }
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardPiece {
-    pub(crate) idx: usize,
+    pub(crate) square: Square,
 }
 
 #[derive(Resource, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -60,19 +56,19 @@ pub struct MoveHintAssets {
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MoveHint {
-    pub(crate) idx: usize,
+    pub(crate) square: chess::Square,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BoardSquare {
-    pub(crate) idx: usize,
+    pub(crate) square: Square,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PickedPiece;
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PromotionMenu(Piece);
+pub(crate) struct PromotionMenu(chess::Piece);
 
 fn setup(
     mut commands: Commands,
@@ -109,26 +105,18 @@ fn bot_move(
     input_white: Res<InputSourceWhite>,
     input_black: Res<InputSourceBlack>,
 ) {
-    if board.active_color() == Player::White {
+    if board.side_to_move() == chess::Color::White {
         match input_white.0 {
             InputSource::Human => {}
             InputSource::Bot { score, depth } => {
-                let umove = board.get_best_move(depth, score).unwrap();
-                match board.try_move(umove) {
-                    Ok(()) => {}
-                    Err(e) => error!("Error playing best move {:?}", e),
-                }
+                // TODO: impl
             }
         }
     } else {
         match input_black.0 {
             InputSource::Human => {}
             InputSource::Bot { score, depth } => {
-                let umove = board.get_best_move(depth, score).unwrap();
-                match board.try_move(umove) {
-                    Ok(()) => {}
-                    Err(e) => error!("Error playing best move {:?}", e),
-                }
+                // TODO: impl
             }
         }
     }
@@ -141,19 +129,14 @@ fn spawn_promotion_menu(
 ) {
     let mesh = meshes.add(Mesh::from(shape::Quad::new(Vec2::splat(100.))));
 
-    let pieces: [Piece; 4] = [
-        Piece::White | Piece::Bishop,
-        Piece::White | Piece::Rook,
-        Piece::White | Piece::Knight,
-        Piece::White | Piece::Queen,
-    ];
+    let pieces: [Piece; 4] = [Piece::Bishop, Piece::Rook, Piece::Knight, Piece::Queen];
 
     for (idx, piece) in pieces.into_iter().enumerate() {
         commands.spawn((
             SpriteSheetBundle {
                 sprite: TextureAtlasSprite {
                     custom_size: Some(Vec2::new(SQUARE_SIZE, SQUARE_SIZE)),
-                    index: piece.get_texture_idx(),
+                    index: piece.get_texture_idx(chess::Color::White),
                     ..default()
                 },
                 transform: Transform::from_translation(Vec3::new(
@@ -182,19 +165,9 @@ fn select_promotion(
 ) -> Bubble {
     let piece = q_promotion_menu.get(event.target).unwrap().0;
 
-    let move_result = board.try_move(
-        promoting_piece
-            .o_move
-            .unwrap()
-            .with_promote(Some(piece & Piece::PieceType)),
-    );
-
-    match move_result {
-        Ok(()) => {}
-        Err(e) => {
-            warn!("Error moving piece: {e:?}");
-        }
-    }
+    let u_move = promoting_piece.o_move.unwrap();
+    let u_move = ChessMove::new(u_move.get_source(), u_move.get_dest(), Some(piece));
+    board.0 = board.make_move_new(u_move);
 
     promoting_piece.o_move = None;
 
@@ -220,7 +193,10 @@ fn spawn_move_hints(commands: &mut Commands, move_hint_assets: MoveHintAssets) {
                     ..default()
                 },
                 MoveHint {
-                    idx: rank * 8 + file,
+                    square: chess::Square::make_square(
+                        Rank::from_index(rank),
+                        File::from_index(file),
+                    ),
                 },
             ));
         }
@@ -235,7 +211,7 @@ fn spawn_pieces(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
                 -3.5 * SQUARE_SIZE + rank as f32 * SQUARE_SIZE,
             );
 
-            let sprite_idx = Piece::Black.get_texture_idx();
+            let sprite_idx = 0;
             commands.spawn((
                 SpriteSheetBundle {
                     sprite: TextureAtlasSprite {
@@ -248,7 +224,10 @@ fn spawn_pieces(commands: &mut Commands, texture_atlas: Handle<TextureAtlas>) {
                     ..default()
                 },
                 BoardPiece {
-                    idx: rank * 8 + file,
+                    square: chess::Square::make_square(
+                        Rank::from_index(rank),
+                        File::from_index(file),
+                    ),
                 },
             ));
         }
@@ -300,7 +279,7 @@ fn spawn_square(
             ..default()
         },
         BoardSquare {
-            idx: rank * 8 + file,
+            square: chess::Square::make_square(Rank::from_index(rank), File::from_index(file)),
         },
         mesh,
         RaycastPickTarget::default(),
@@ -331,7 +310,7 @@ fn pickup_piece(
     };
 
     for (entity, piece) in q_piece.iter() {
-        if piece.idx == board_square.idx {
+        if piece.square == board_square.square {
             commands.entity(entity).insert(PickedPiece);
         }
     }
@@ -349,10 +328,9 @@ fn drag_end(
 
     if let Ok((entity, piece, mut transform)) = q_picked_piece.get_single_mut() {
         commands.entity(entity).remove::<PickedPiece>();
-        // figure out a place to put the piece and change the board to reflect
-        //     that
-        let rank = piece.idx / 8;
-        let file = piece.idx % 8;
+        // Put the piece back in its original square
+        let rank = piece.square.get_rank().to_index();
+        let file = piece.square.get_file().to_index();
         let pos = Vec3::new(
             -3.5 * SQUARE_SIZE + file as f32 * SQUARE_SIZE,
             -3.5 * SQUARE_SIZE + rank as f32 * SQUARE_SIZE,
@@ -391,13 +369,16 @@ fn drop_piece_on(
         .get(event.target)
         .expect("this should be called on a board square");
 
-    let umove = Move::from_idxs(from_square.idx, this.idx);
-    match board.try_move(umove) {
-        Ok(()) => {}
-        Err(InvalidMoveErr::NoPromotion) => {
-            promoting_piece.o_move = Some(umove);
+    let m = ChessMove::new(from_square.square, this.square, None);
+
+    if board.legal(m) {
+        board.0 = board.make_move_new(m);
+    } else {
+        let promoting_move = ChessMove::new(m.get_source(), m.get_dest(), Some(Piece::Queen));
+        if board.legal(promoting_move) {
+            // We are missing a promotion
+            promoting_piece.o_move = Some(m);
         }
-        Err(_) => {}
     }
 
     Bubble::Burst

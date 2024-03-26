@@ -2182,7 +2182,7 @@ dependencies = [
  "bevy_editor_pls",
  "bevy_mod_picking",
  "bitflags 2.2.1",
- "hourglass_engine",
+ "chess",
 ]
 
 [[package]]

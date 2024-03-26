@@ -15,4 +15,6 @@ bevy_mod_picking = { version = "0.13.0", default_features = false, features = [
     # "highlight",
 ]}
 bitflags = "2.2.1"
-hourglass_engine = { path = "../hourglass_engine" }
+chess = "3.2.0"
+# hourglass_engine = { path = "../hourglass_engine" }
+
